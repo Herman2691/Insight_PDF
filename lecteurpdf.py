@@ -22,13 +22,16 @@ st.set_page_config(
 # CSS personnalisé pour un design professionnel
 st.markdown("""
     <style>
+    /* Import de polices */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap');
+    
     /* Thème général */
-    .stApp {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    * {
+        font-family: 'Inter', sans-serif;
     }
     
-    .main {
-        padding: 2rem;
+    .stApp {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     }
     
     /* En-tête professionnel */
@@ -87,117 +90,38 @@ st.markdown("""
         margin-bottom: 1.5rem;
     }
     
-    /* Onglets personnalisés */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
-        background-color: rgba(255,255,255,0.95);
-        padding: 0.5rem;
-        border-radius: 10px;
-    }
-    
-    .stTabs [data-baseweb="tab"] {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white !important;
-        border-radius: 8px;
-        padding: 0.8rem 1.5rem;
-        font-weight: 600;
-    }
-    
-    .stTabs [aria-selected="true"] {
-        background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
-    }
-    
-    /* Sidebar */
+    /* Sidebar styling */
     section[data-testid="stSidebar"] {
         background: linear-gradient(180deg, #1e3c72 0%, #2a5298 100%);
     }
     
-    section[data-testid="stSidebar"] * {
-        color: white;
-    }
-    
-    /* Titres sidebar en blanc */
     section[data-testid="stSidebar"] h2,
-    section[data-testid="stSidebar"] h3 {
+    section[data-testid="stSidebar"] h3,
+    section[data-testid="stSidebar"] p,
+    section[data-testid="stSidebar"] label,
+    section[data-testid="stSidebar"] div {
         color: white !important;
     }
     
-    /* File uploader dans sidebar */
-    section[data-testid="stSidebar"] [data-testid="stFileUploader"] {
-        background-color: rgba(255, 255, 255, 0.1);
-        border-radius: 10px;
-        padding: 1rem;
-    }
-    
-    section[data-testid="stSidebar"] [data-testid="stFileUploader"] button {
+    /* File uploader button */
+    section[data-testid="stSidebar"] button {
         background-color: white !important;
         color: black !important;
-        font-weight: 600;
     }
     
-    section[data-testid="stSidebar"] [data-testid="stFileUploader"] small {
-        color: rgba(255, 255, 255, 0.8) !important;
-    }
-    
-    /* Boutons */
-    .stButton > button {
+    /* Boutons principaux */
+    button[kind="primary"] {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
         color: white !important;
-        border-radius: 10px;
-        padding: 0.75rem 2rem;
-        font-weight: 600;
-        font-size: 1rem;
         border: none !important;
+        border-radius: 10px !important;
+        padding: 0.75rem 2rem !important;
+        font-weight: 600 !important;
     }
     
-    .stButton > button:hover {
-        opacity: 0.9;
-        transform: translateY(-2px);
-    }
-    
-    /* Métriques */
-    div[data-testid="stMetricValue"] {
-        font-size: 2rem;
-        color: #1e3c72;
-        font-weight: 700;
-    }
-    
-    /* Expander */
-    div[data-testid="stExpander"] summary {
-        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-        border-radius: 10px;
-        font-weight: 600;
-        color: #1e3c72;
-    }
-    
-    /* Messages */
-    .stSuccess {
-        background-color: #d4edda;
-        border-left: 5px solid #28a745;
-        color: #155724;
-        padding: 1rem;
-        border-radius: 8px;
-    }
-    
-    .stWarning {
-        background-color: #fff3cd;
-        border-left: 5px solid #ffc107;
-        color: #856404;
-        padding: 1rem;
-        border-radius: 8px;
-    }
-    
-    .stError {
-        background-color: #f8d7da;
-        border-left: 5px solid #dc3545;
-        color: #721c24;
-        padding: 1rem;
-        border-radius: 8px;
-    }
-    
-    /* Texte amélioré */
+    /* Texte des titres */
     h1, h2, h3 {
-        color: #1e3c72;
+        color: #1e3c72 !important;
         font-weight: 700;
     }
     
