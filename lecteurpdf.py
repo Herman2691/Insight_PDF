@@ -5,11 +5,11 @@ from io import BytesIO
 import json
 import re
 from collections import Counter
-#from dotenv import load_dotenv
+from dotenv import load_dotenv
 import os
 
 # Charger les variables d'environnement
-#load_dotenv()
+load_dotenv()
 
 # Configuration de la page
 st.set_page_config(
@@ -23,8 +23,11 @@ st.set_page_config(
 st.markdown("""
     <style>
     /* Thème général */
-    .main {
+    .stApp {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    
+    .main {
         padding: 2rem;
     }
     
@@ -87,18 +90,17 @@ st.markdown("""
     /* Onglets personnalisés */
     .stTabs [data-baseweb="tab-list"] {
         gap: 8px;
-        background: rgba(255,255,255,0.95);
+        background-color: rgba(255,255,255,0.95);
         padding: 0.5rem;
         border-radius: 10px;
     }
     
     .stTabs [data-baseweb="tab"] {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
+        color: white !important;
         border-radius: 8px;
         padding: 0.8rem 1.5rem;
         font-weight: 600;
-        border: none;
     }
     
     .stTabs [aria-selected="true"] {
@@ -106,97 +108,62 @@ st.markdown("""
     }
     
     /* Sidebar */
-    [data-testid="stSidebar"] {
+    section[data-testid="stSidebar"] {
         background: linear-gradient(180deg, #1e3c72 0%, #2a5298 100%);
     }
     
-    [data-testid="stSidebar"] .element-container {
+    section[data-testid="stSidebar"] * {
         color: white;
     }
     
     /* Titres sidebar en blanc */
-    [data-testid="stSidebar"] h2,
-    [data-testid="stSidebar"] h3,
-    [data-testid="stSidebar"] .element-container p {
+    section[data-testid="stSidebar"] h2,
+    section[data-testid="stSidebar"] h3 {
         color: white !important;
     }
     
     /* File uploader dans sidebar */
-    [data-testid="stSidebar"] [data-testid="stFileUploader"] {
-        background: rgba(255, 255, 255, 0.1);
+    section[data-testid="stSidebar"] [data-testid="stFileUploader"] {
+        background-color: rgba(255, 255, 255, 0.1);
         border-radius: 10px;
         padding: 1rem;
     }
     
-    [data-testid="stSidebar"] [data-testid="stFileUploader"] label {
-        color: white !important;
-    }
-    
-    [data-testid="stSidebar"] [data-testid="stFileUploader"] button {
-        background: white !important;
+    section[data-testid="stSidebar"] [data-testid="stFileUploader"] button {
+        background-color: white !important;
         color: black !important;
-        border: none;
-        border-radius: 8px;
         font-weight: 600;
     }
     
-    [data-testid="stSidebar"] [data-testid="stFileUploader"] small {
+    section[data-testid="stSidebar"] [data-testid="stFileUploader"] small {
         color: rgba(255, 255, 255, 0.8) !important;
-    }
-    
-    /* Messages dans sidebar en blanc */
-    [data-testid="stSidebar"] .stSuccess,
-    [data-testid="stSidebar"] .stInfo {
-        color: white !important;
-        background: rgba(255, 255, 255, 0.15) !important;
-        border-left-color: white !important;
-    }
-    
-    [data-testid="stSidebar"] .stSuccess [data-testid="stMarkdownContainer"],
-    [data-testid="stSidebar"] .stInfo [data-testid="stMarkdownContainer"] {
-        color: white !important;
-    }
-    
-    /* Markdown dans sidebar */
-    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] {
-        color: white !important;
-    }
-    
-    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] strong {
-        color: white !important;
-    }
-    
-    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] ul li {
-        color: white !important;
     }
     
     /* Boutons */
     .stButton > button {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        border: none;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+        color: white !important;
         border-radius: 10px;
         padding: 0.75rem 2rem;
         font-weight: 600;
         font-size: 1rem;
-        transition: all 0.3s;
-        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        border: none !important;
     }
     
     .stButton > button:hover {
+        opacity: 0.9;
         transform: translateY(-2px);
-        box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
     }
     
     /* Métriques */
-    [data-testid="stMetricValue"] {
+    div[data-testid="stMetricValue"] {
         font-size: 2rem;
         color: #1e3c72;
         font-weight: 700;
     }
     
     /* Expander */
-    .streamlit-expanderHeader {
+    div[data-testid="stExpander"] summary {
         background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
         border-radius: 10px;
         font-weight: 600;
