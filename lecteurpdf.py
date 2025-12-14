@@ -5,11 +5,11 @@ from io import BytesIO
 import json
 import re
 from collections import Counter
-from dotenv import load_dotenv
+#from dotenv import load_dotenv
 import os
 
 # Charger les variables d'environnement
-load_dotenv()
+#load_dotenv()
 
 # Configuration de la page
 st.set_page_config(
