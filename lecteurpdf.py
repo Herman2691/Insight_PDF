@@ -19,121 +19,23 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# CSS personnalisé pour un design professionnel
+# CSS simplifié et sûr
 st.markdown("""
     <style>
-    /* Import de polices */
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap');
-    
-    /* Thème général */
-    * {
-        font-family: 'Inter', sans-serif;
-    }
-    
-    .stApp {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    }
-    
-    /* En-tête professionnel */
-    .header-container {
+    .header-box {
         background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
-        padding: 2.5rem;
-        border-radius: 20px;
-        margin-bottom: 2rem;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-        border: 1px solid rgba(255,255,255,0.1);
-    }
-    
-    .app-title {
-        font-size: 3.5rem;
-        font-weight: 800;
-        color: #ffffff;
-        margin: 0;
-        text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
-        letter-spacing: -1px;
-    }
-    
-    .app-subtitle {
-        font-size: 1.3rem;
-        color: #a8d5ff;
-        margin-top: 0.8rem;
-        line-height: 1.6;
-        font-weight: 300;
-    }
-    
-    .author-info {
-        margin-top: 1.5rem;
-        padding-top: 1.5rem;
-        border-top: 1px solid rgba(255,255,255,0.2);
-        color: #e0e7ff;
-        font-size: 1rem;
-    }
-    
-    .author-name {
-        font-weight: 600;
-        color: #ffd700;
-        font-size: 1.1rem;
-    }
-    
-    .author-title {
-        color: #b8d4ff;
-        font-style: italic;
-        margin-left: 0.5rem;
-    }
-    
-    /* Cartes de contenu */
-    .content-card {
-        background: white;
         padding: 2rem;
         border-radius: 15px;
-        box-shadow: 0 5px 20px rgba(0,0,0,0.1);
-        margin-bottom: 1.5rem;
+        margin-bottom: 2rem;
+        color: white;
     }
-    
-    /* Sidebar styling */
-    section[data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #1e3c72 0%, #2a5298 100%);
-    }
-    
-    section[data-testid="stSidebar"] h2,
-    section[data-testid="stSidebar"] h3,
-    section[data-testid="stSidebar"] p,
-    section[data-testid="stSidebar"] label,
-    section[data-testid="stSidebar"] div {
-        color: white !important;
-    }
-    
-    /* File uploader button */
-    section[data-testid="stSidebar"] button {
-        background-color: white !important;
-        color: black !important;
-    }
-    
-    /* Boutons principaux */
-    button[kind="primary"] {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-        color: white !important;
-        border: none !important;
-        border-radius: 10px !important;
-        padding: 0.75rem 2rem !important;
-        font-weight: 600 !important;
-    }
-    
-    /* Texte des titres */
-    h1, h2, h3 {
-        color: #1e3c72 !important;
-        font-weight: 700;
-    }
-    
-    /* Footer */
-    .footer {
-        text-align: center;
-        padding: 2rem;
+    .footer-box {
         background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+        padding: 2rem;
         border-radius: 15px;
         color: white;
-        margin-top: 3rem;
-        box-shadow: 0 5px 20px rgba(0,0,0,0.2);
+        text-align: center;
+        margin-top: 2rem;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -187,28 +89,29 @@ def find_relevant_pages(text_by_page, answer):
             pages_mentioned.append(page_num)
     return sorted(set(pages_mentioned))
 
-# En-tête professionnel
+# En-tête
 st.markdown("""
-    <div class="header-container">
-        <h1 class="app-title">🧠 Insight PDF</h1>
-        <p class="app-subtitle">
+    <div class="header-box">
+        <h1 style="margin:0; font-size: 2.5rem;">🧠 Insight PDF</h1>
+        <p style="margin-top: 1rem; font-size: 1.1rem; opacity: 0.9;">
             Analysez vos documents PDF avec l'intelligence artificielle de Mistral AI. 
             Obtenez des résumés instantanés, posez des questions, vérifiez l'orthographe 
             et explorez l'analyse sémantique en profondeur.
         </p>
-        <div class="author-info">
-            <span class="author-name">Kandolo Herman</span>
-            <span class="author-title">• Chercheur en Intelligence Artificielle</span>
+        <div style="margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid rgba(255,255,255,0.3);">
+            <span style="font-weight: 600; color: #ffd700; font-size: 1.1rem;">Kandolo Herman</span>
+            <span style="opacity: 0.8;"> • Chercheur en Intelligence Artificielle</span>
         </div>
     </div>
 """, unsafe_allow_html=True)
 
-# Sidebar - Configuration
+# Sidebar
 with st.sidebar:
-    st.markdown('<h2 style="color: white;">🧠 Insight PDF</h2>', unsafe_allow_html=True)
-    st.markdown("### ⚙️ Configuration")
+    st.title("🧠 Insight PDF")
+    st.markdown("---")
     
-    # Charger la clé API uniquement depuis .env
+    st.subheader("⚙️ Configuration")
+    
     api_key = os.getenv("MISTRAL_API_KEY", "")
     
     if api_key:
@@ -218,23 +121,22 @@ with st.sidebar:
         st.error("❌ Clé API non trouvée")
         st.info("💡 Veuillez configurer MISTRAL_API_KEY dans le fichier .env")
     
-    st.divider()
+    st.markdown("---")
     
-    st.markdown("### 📤 Charger un document")
+    st.subheader("📤 Charger un document")
     uploaded_file = st.file_uploader("Sélectionnez un fichier PDF", type=['pdf'], label_visibility="collapsed")
     
     if uploaded_file:
-        with st.spinner("🔄 Extraction du texte en cours..."):
+        with st.spinner("🔄 Extraction du texte..."):
             st.session_state.pdf_text = extract_pdf_text(uploaded_file)
             st.session_state.pdf_name = uploaded_file.name
         
         st.success(f"✅ {len(st.session_state.pdf_text)} pages extraites")
         st.info(f"📄 **{st.session_state.pdf_name}**")
     
-    st.divider()
+    st.markdown("---")
     
-    # Informations sur l'application
-    st.markdown("### 📊 Capacités")
+    st.subheader("📊 Capacités")
     st.markdown("""
     - 💬 Questions/Réponses IA
     - 📝 Résumés intelligents
@@ -242,7 +144,7 @@ with st.sidebar:
     - 🔍 Analyse sémantique
     """)
 
-# Vérifications préalables
+# Vérifications
 if not st.session_state.mistral_client:
     st.warning("⚠️ Veuillez configurer votre clé API Mistral dans le fichier .env")
     st.stop()
@@ -251,7 +153,7 @@ if not st.session_state.pdf_text:
     st.info("📤 Veuillez charger un document PDF dans la barre latérale pour commencer l'analyse")
     st.stop()
 
-# Onglets principaux
+# Onglets
 tab1, tab2, tab3, tab4 = st.tabs([
     "💬 Questions/Réponses",
     "📄 Résumé",
@@ -261,14 +163,13 @@ tab1, tab2, tab3, tab4 = st.tabs([
 
 # TAB 1: Questions/Réponses
 with tab1:
-    st.markdown("### 💬 Posez vos questions sur le document")
+    st.header("💬 Posez vos questions sur le document")
     st.markdown("Utilisez l'intelligence artificielle pour interroger le contenu de votre PDF")
     
     question = st.text_area(
         "Votre question:",
         placeholder="Ex: Quels sont les points principaux abordés dans ce document?",
-        height=120,
-        label_visibility="collapsed"
+        height=120
     )
     
     if st.button("🔍 Obtenir la réponse", type="primary", use_container_width=True):
@@ -279,8 +180,8 @@ with tab1:
                 
                 answer = query_mistral(st.session_state.mistral_client, prompt, context)
                 
-                st.markdown("#### 📌 Réponse:")
-                st.markdown(f"<div class='content-card'>{answer}</div>", unsafe_allow_html=True)
+                st.markdown("### 📌 Réponse:")
+                st.info(answer)
                 
                 pages = find_relevant_pages(st.session_state.pdf_text, answer)
                 if pages:
@@ -290,7 +191,7 @@ with tab1:
 
 # TAB 2: Résumé
 with tab2:
-    st.markdown("### 📄 Résumé automatique du document")
+    st.header("📄 Résumé automatique du document")
     st.markdown("Générez un résumé intelligent adapté à vos besoins")
     
     col1, col2 = st.columns([1, 3])
@@ -298,15 +199,14 @@ with tab2:
     with col1:
         summary_type = st.radio(
             "Type de résumé:",
-            ["Court", "Moyen", "Détaillé"],
-            label_visibility="collapsed"
+            ["Court", "Moyen", "Détaillé"]
         )
         
-        st.markdown(f"""
-        **{summary_type}**
-        - Court: 3-5 phrases
-        - Moyen: 2-3 paragraphes
-        - Détaillé: Analyse complète
+        st.markdown("""
+        **Description:**
+        - **Court**: 3-5 phrases
+        - **Moyen**: 2-3 paragraphes
+        - **Détaillé**: Analyse complète
         """)
     
     with col2:
@@ -323,12 +223,11 @@ with tab2:
                 
                 summary = query_mistral(st.session_state.mistral_client, prompt, context)
                 
-                st.markdown("#### 📋 Résumé:")
-                st.markdown(f"<div class='content-card'>{summary}</div>", unsafe_allow_html=True)
+                st.markdown("### 📋 Résumé:")
+                st.info(summary)
     
-    # Statistiques du document
-    st.divider()
-    st.markdown("### 📊 Statistiques du document")
+    st.markdown("---")
+    st.subheader("📊 Statistiques du document")
     
     col1, col2, col3 = st.columns(3)
     
@@ -342,7 +241,7 @@ with tab2:
 
 # TAB 3: Vérification Orthographique
 with tab3:
-    st.markdown("### ✏️ Vérification orthographique et grammaticale")
+    st.header("✏️ Vérification orthographique et grammaticale")
     st.markdown("Détectez et corrigez les erreurs dans votre document")
     
     if st.button("🔍 Analyser l'orthographe", type="primary", use_container_width=True):
@@ -389,20 +288,20 @@ Si aucune erreur, retourne {{"erreurs": [], "nombre_erreurs": 0}}"""
                             col1, col2 = st.columns(2)
                             col1.markdown(f"❌ *{erreur['texte']}*")
                             col2.markdown(f"✅ *{erreur['correction']}*")
-                            st.divider()
+                            st.markdown("---")
             else:
                 st.success("✅ Aucune erreur détectée dans le document!")
 
-# TAB 4: Analyse Lexicale & Sémantique
+# TAB 4: Analyse Lexicale
 with tab4:
-    st.markdown("### 📊 Analyse lexicale et sémantique")
+    st.header("📊 Analyse lexicale et sémantique")
     st.markdown("Explorez en profondeur le contenu et la structure de votre document")
     
     if st.button("📈 Lancer l'analyse complète", type="primary", use_container_width=True):
         with st.spinner("🔄 Analyse approfondie en cours..."):
             full_text = get_full_text(st.session_state.pdf_text)
             
-            # Analyse lexicale basique
+            # Analyse lexicale
             words = re.findall(r'\b\w+\b', full_text.lower())
             word_freq = Counter(words)
             
@@ -421,27 +320,25 @@ with tab4:
             col1, col2 = st.columns([1, 1])
             
             with col1:
-                st.markdown("#### 📊 Statistiques lexicales")
+                st.subheader("📊 Statistiques lexicales")
                 
-                metric_col1, metric_col2 = st.columns(2)
-                metric_col1.metric("🔤 Vocabulaire unique", len(word_freq))
-                metric_col2.metric("📝 Mots totaux", len(words))
-                
+                st.metric("🔤 Vocabulaire unique", len(word_freq))
+                st.metric("📝 Mots totaux", len(words))
                 st.metric("💎 Richesse lexicale", f"{len(word_freq)/len(words)*100:.1f}%")
                 
-                st.markdown("#### 🔤 Mots les plus fréquents")
+                st.markdown("---")
+                st.markdown("**🔤 Mots les plus fréquents**")
                 top_words = word_freq.most_common(15)
                 for word, count in top_words:
                     if len(word) > 3:
                         st.text(f"• {word}: {count} fois")
             
             with col2:
-                st.markdown("#### 🧠 Analyse sémantique (Mistral AI)")
-                st.markdown(f"<div class='content-card'>{analysis}</div>", unsafe_allow_html=True)
+                st.subheader("🧠 Analyse sémantique (Mistral AI)")
+                st.info(analysis)
             
-            # Distribution par page
-            st.divider()
-            st.markdown("### 📄 Distribution du contenu par page")
+            st.markdown("---")
+            st.subheader("📄 Distribution du contenu par page")
             
             page_stats = []
             for page_num, text in st.session_state.pdf_text.items():
@@ -450,12 +347,12 @@ with tab4:
             
             st.dataframe(page_stats, use_container_width=True)
 
-# Footer professionnel
+# Footer
 st.markdown("""
-    <div class="footer">
-        <h3 style="color: white; margin-bottom: 1rem;">🧠 Insight PDF</h3>
+    <div class="footer-box">
+        <h3 style="margin: 0 0 1rem 0;">🧠 Insight PDF</h3>
         <p style="margin: 0.5rem 0;">Powered by <strong>Mistral AI</strong> • Développé avec ❤️ en Streamlit</p>
         <p style="margin: 0.5rem 0; color: #ffd700;">Kandolo Herman • Chercheur en Intelligence Artificielle</p>
-        <p style="margin-top: 1rem; font-size: 0.9rem; color: #b8d4ff;">© 2024 • Tous droits réservés</p>
+        <p style="margin-top: 1rem; font-size: 0.9rem; opacity: 0.8;">© 2024 • Tous droits réservés</p>
     </div>
 """, unsafe_allow_html=True)
