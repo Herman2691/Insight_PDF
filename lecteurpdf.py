@@ -19,6 +19,27 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# CSS simplifié et sûr
+st.markdown("""
+    <style>
+    .header-box {
+        background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+        padding: 2rem;
+        border-radius: 15px;
+        margin-bottom: 2rem;
+        color: white;
+    }
+    .footer-box {
+        background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+        padding: 2rem;
+        border-radius: 15px;
+        color: white;
+        text-align: center;
+        margin-top: 2rem;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 # Initialisation de la session state
 if 'pdf_text' not in st.session_state:
     st.session_state.pdf_text = {}
@@ -68,24 +89,26 @@ def find_relevant_pages(text_by_page, answer):
             pages_mentioned.append(page_num)
     return sorted(set(pages_mentioned))
 
-# En-tête avec container natif Streamlit
-st.title("🧠 Insight PDF")
-st.subheader("Analysez vos documents PDF avec l'intelligence artificielle")
-
-st.info("""
-**À propos de l'application:**  
-Obtenez des résumés instantanés, posez des questions, vérifiez l'orthographe 
-et explorez l'analyse sémantique en profondeur grâce à Mistral AI.
-
-**Développé par:** Kandolo Herman • Chercheur en Intelligence Artificielle
-""")
-
-st.divider()
+# En-tête
+st.markdown("""
+    <div class="header-box">
+        <h1 style="margin:0; font-size: 2.5rem;">🧠 Insight PDF</h1>
+        <p style="margin-top: 1rem; font-size: 1.1rem; opacity: 0.9;">
+            Analysez vos documents PDF avec l'intelligence artificielle de Mistral AI. 
+            Obtenez des résumés instantanés, posez des questions, vérifiez l'orthographe 
+            et explorez l'analyse sémantique en profondeur.
+        </p>
+        <div style="margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid rgba(255,255,255,0.3);">
+            <span style="font-weight: 600; color: #ffd700; font-size: 1.1rem;">Kandolo Herman</span>
+            <span style="opacity: 0.8;"> • Chercheur en Intelligence Artificielle</span>
+        </div>
+    </div>
+""", unsafe_allow_html=True)
 
 # Sidebar
 with st.sidebar:
     st.title("🧠 Insight PDF")
-    st.divider()
+    st.markdown("---")
     
     st.subheader("⚙️ Configuration")
     
@@ -98,10 +121,10 @@ with st.sidebar:
         st.error("❌ Clé API non trouvée")
         st.info("💡 Veuillez configurer MISTRAL_API_KEY dans le fichier .env")
     
-    st.divider()
+    st.markdown("---")
     
     st.subheader("📤 Charger un document")
-    uploaded_file = st.file_uploader("Sélectionnez un fichier PDF", type=['pdf'])
+    uploaded_file = st.file_uploader("Sélectionnez un fichier PDF", type=['pdf'], label_visibility="collapsed")
     
     if uploaded_file:
         with st.spinner("🔄 Extraction du texte..."):
@@ -111,7 +134,7 @@ with st.sidebar:
         st.success(f"✅ {len(st.session_state.pdf_text)} pages extraites")
         st.info(f"📄 **{st.session_state.pdf_name}**")
     
-    st.divider()
+    st.markdown("---")
     
     st.subheader("📊 Capacités")
     st.markdown("""
@@ -141,7 +164,7 @@ tab1, tab2, tab3, tab4 = st.tabs([
 # TAB 1: Questions/Réponses
 with tab1:
     st.header("💬 Posez vos questions sur le document")
-    st.caption("Utilisez l'intelligence artificielle pour interroger le contenu de votre PDF")
+    st.markdown("Utilisez l'intelligence artificielle pour interroger le contenu de votre PDF")
     
     question = st.text_area(
         "Votre question:",
@@ -157,8 +180,8 @@ with tab1:
                 
                 answer = query_mistral(st.session_state.mistral_client, prompt, context)
                 
-                st.subheader("📌 Réponse:")
-                st.write(answer)
+                st.markdown("### 📌 Réponse:")
+                st.info(answer)
                 
                 pages = find_relevant_pages(st.session_state.pdf_text, answer)
                 if pages:
@@ -169,7 +192,7 @@ with tab1:
 # TAB 2: Résumé
 with tab2:
     st.header("📄 Résumé automatique du document")
-    st.caption("Générez un résumé intelligent adapté à vos besoins")
+    st.markdown("Générez un résumé intelligent adapté à vos besoins")
     
     col1, col2 = st.columns([1, 3])
     
@@ -179,7 +202,7 @@ with tab2:
             ["Court", "Moyen", "Détaillé"]
         )
         
-        st.info("""
+        st.markdown("""
         **Description:**
         - **Court**: 3-5 phrases
         - **Moyen**: 2-3 paragraphes
@@ -200,10 +223,10 @@ with tab2:
                 
                 summary = query_mistral(st.session_state.mistral_client, prompt, context)
                 
-                st.subheader("📋 Résumé:")
-                st.write(summary)
+                st.markdown("### 📋 Résumé:")
+                st.info(summary)
     
-    st.divider()
+    st.markdown("---")
     st.subheader("📊 Statistiques du document")
     
     col1, col2, col3 = st.columns(3)
@@ -219,7 +242,7 @@ with tab2:
 # TAB 3: Vérification Orthographique
 with tab3:
     st.header("✏️ Vérification orthographique et grammaticale")
-    st.caption("Détectez et corrigez les erreurs dans votre document")
+    st.markdown("Détectez et corrigez les erreurs dans votre document")
     
     if st.button("🔍 Analyser l'orthographe", type="primary", use_container_width=True):
         with st.spinner("⏳ Vérification en cours..."):
@@ -263,18 +286,16 @@ Si aucune erreur, retourne {{"erreurs": [], "nombre_erreurs": 0}}"""
                         for i, erreur in enumerate(result['erreurs'], 1):
                             st.markdown(f"**{i}. {erreur.get('type', 'Erreur').capitalize()}**")
                             col1, col2 = st.columns(2)
-                            with col1:
-                                st.error(f"❌ {erreur['texte']}")
-                            with col2:
-                                st.success(f"✅ {erreur['correction']}")
-                            st.divider()
+                            col1.markdown(f"❌ *{erreur['texte']}*")
+                            col2.markdown(f"✅ *{erreur['correction']}*")
+                            st.markdown("---")
             else:
                 st.success("✅ Aucune erreur détectée dans le document!")
 
 # TAB 4: Analyse Lexicale
 with tab4:
     st.header("📊 Analyse lexicale et sémantique")
-    st.caption("Explorez en profondeur le contenu et la structure de votre document")
+    st.markdown("Explorez en profondeur le contenu et la structure de votre document")
     
     if st.button("📈 Lancer l'analyse complète", type="primary", use_container_width=True):
         with st.spinner("🔄 Analyse approfondie en cours..."):
@@ -305,7 +326,7 @@ with tab4:
                 st.metric("📝 Mots totaux", len(words))
                 st.metric("💎 Richesse lexicale", f"{len(word_freq)/len(words)*100:.1f}%")
                 
-                st.divider()
+                st.markdown("---")
                 st.markdown("**🔤 Mots les plus fréquents**")
                 top_words = word_freq.most_common(15)
                 for word, count in top_words:
@@ -314,9 +335,9 @@ with tab4:
             
             with col2:
                 st.subheader("🧠 Analyse sémantique (Mistral AI)")
-                st.write(analysis)
+                st.info(analysis)
             
-            st.divider()
+            st.markdown("---")
             st.subheader("📄 Distribution du contenu par page")
             
             page_stats = []
@@ -324,8 +345,14 @@ with tab4:
                 page_words = len(text.split())
                 page_stats.append({"Page": page_num, "Mots": page_words})
             
-            st.dataframe(page_stats, use_container_width=True, hide_index=True)
+            st.dataframe(page_stats, use_container_width=True)
 
 # Footer
-st.divider()
-st.info("🧠 **Insight PDF** • Powered by Mistral AI • Développé par Kandolo Herman (Chercheur en IA) • © 2024")
+st.markdown("""
+    <div class="footer-box">
+        <h3 style="margin: 0 0 1rem 0;">🧠 Insight PDF</h3>
+        <p style="margin: 0.5rem 0;">Powered by <strong>Mistral AI</strong> • Développé avec ❤️ en Streamlit</p>
+        <p style="margin: 0.5rem 0; color: #ffd700;">Kandolo Herman • Chercheur en Intelligence Artificielle</p>
+        <p style="margin-top: 1rem; font-size: 0.9rem; opacity: 0.8;">© 2024 • Tous droits réservés</p>
+    </div>
+""", unsafe_allow_html=True)
