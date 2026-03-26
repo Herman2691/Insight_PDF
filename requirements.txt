@@ -1,9 +1,6 @@
-    
-
 streamlit==1.31.0
-mistralai==1.0.0
-PyPDF2==3.0.1
-python-dotenv==1.0.0
-langchain==0.0.208
-chromadb==0.3.26
+mistralai>=1.0.0PyPDF2==3.0.1python-dotenv==1.0.0
+langchain>=0.1.0
+langchain-community
 langchain-mistralai
+chromadb>=0.4.0
