@@ -1,10 +1,10 @@
 streamlit>=1.38.0
-python-dotenv
+mistralai==0.4.2
 PyPDF2
-mistralai
 langchain
 langchain-community
 langchain-mistralai
 langchain-text-splitters
 chromadb
 pysqlite3-binary
+python-dotenv
