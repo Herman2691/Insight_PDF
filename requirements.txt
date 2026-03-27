@@ -1,10 +1,21 @@
+# Interface et Environnement
 streamlit>=1.38.0
+python-dotenv
+
+# IA et LLM (Versions stables demandées)
 mistralai==0.4.2
-PyPDF2
 langchain
 langchain-community
 langchain-mistralai
 langchain-text-splitters
+
+# Base de données Vectorielle (RAG)
 chromadb
 pysqlite3-binary
-python-dotenv
+
+# Traitement de fichiers et documents
+PyPDF2
+python-pptx
+
+# Multimédia
+gTTS
