@@ -5,7 +5,7 @@ from io import BytesIO
 from datetime import datetime
 from dotenv import load_dotenv
 
-# --- FIX CHROMADB ---
+# --- FIX CHROMADB POUR LE CLOUD ---
 try:
     __import__('pysqlite3')
     import sys
@@ -21,113 +21,143 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 load_dotenv()
 
-# --- CONFIGURATION (Sans polices externes pour la stabilité) ---
-st.set_page_config(page_title="Insight PDF Pro", page_icon="✨", layout="wide")
+# --- CONFIGURATION TECHNIQUE ---
+st.set_page_config(page_title="Insight PDF", page_icon="✨", layout="wide")
 
-# --- CSS MINIMALISTE (Style Gemini sans fioritures risquées) ---
+# --- CSS STABLE (Couleurs & Arrondis uniquement, pas de structure HTML) ---
 st.markdown("""
     <style>
-    /* On utilise les polices système pour éviter l'erreur removeChild */
-    html, body, [class*="ViewContainer"] {
-        font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    /* Couleurs inspirées de Gemini */
+    :root {
+        --gemini-blue: #1a73e8;
     }
-    .gemini-gradient {
-        background: linear-gradient(70deg, #4285f4, #9b72cb, #d96570);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        font-weight: bold;
-        font-size: 2.5rem;
+    .stApp {
+        background-color: #ffffff;
     }
-    .stChatFloatingInputContainer { background-color: rgba(255,255,255,0) !important; }
+    /* Style des boutons et inputs */
+    div.stButton > button {
+        border-radius: 20px;
+        border: 1px solid #dadce0;
+        transition: all 0.3s;
+    }
+    div.stButton > button:hover {
+        border-color: var(--gemini-blue);
+        color: var(--gemini-blue);
+    }
+    /* Masquer le menu Streamlit pour plus de propreté */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
     </style>
 """, unsafe_allow_html=True)
 
-# --- LOGIQUE IA ---
-def process_pdf(pdf_file, api_key):
-    try:
-        pdf_reader = PyPDF2.PdfReader(BytesIO(pdf_file.read()))
-        full_text = "\n".join([p.extract_text() for p in pdf_reader.pages if p.extract_text()])
-        if not full_text.strip(): return None, "PDF illisible."
-        
-        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
-        chunks = text_splitter.split_text(full_text)
-        
-        # Utilisation d'un ID unique pour éviter les conflits de dossier Chroma
-        db_id = f"db_{int(datetime.now().timestamp())}"
-        embeddings = MistralAIEmbeddings(mistral_api_key=api_key)
-        vectorstore = Chroma.from_texts(
-            texts=chunks, 
-            embedding=embeddings, 
-            collection_name=db_id
-        )
-        return vectorstore, full_text
-    except Exception as e:
-        return None, str(e)
+# --- LOGIQUE DE TRAITEMENT ---
+def get_pdf_text(pdf_file):
+    reader = PyPDF2.PdfReader(BytesIO(pdf_file.read()))
+    text = ""
+    for page in reader.pages:
+        content = page.extract_text()
+        if content:
+            text += content + "\n"
+    return text
 
-# --- SESSION STATE ---
-if 'vs' not in st.session_state: st.session_state.vs = None
-if 'txt' not in st.session_state: st.session_state.txt = ""
-if 'chat_history' not in st.session_state: st.session_state.chat_history = []
+def create_vectorstore(text, api_key):
+    splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=100)
+    chunks = splitter.split_text(text)
+    embeddings = MistralAIEmbeddings(mistral_api_key=api_key)
+    # Utilisation d'un dossier temporaire unique pour éviter les conflits d'accès
+    return Chroma.from_texts(chunks, embeddings)
+
+# --- INITIALISATION DE L'ÉTAT ---
+if 'processed' not in st.session_state:
+    st.session_state.processed = False
+    st.session_state.vectorstore = None
+    st.session_state.full_text = ""
+    st.session_state.messages = []
 
 api_key = os.getenv("MISTRAL_API_KEY", "")
 client = Mistral(api_key=api_key) if api_key else None
 
-# --- BARRE LATÉRALE ---
+# --- SIDEBAR : FONCTIONNALITÉS ---
 with st.sidebar:
-    st.title("📁 Documents")
-    uploaded_file = st.file_uploader("Charger un PDF", type=['pdf'])
+    st.title("✨ Insight PDF")
+    st.caption("Analyseur RAG Intelligent")
     
-    if uploaded_file and st.button("Analyser maintenant", use_container_width=True):
-        with st.status("Traitement du document...", expanded=True) as status:
-            vs, text = process_pdf(uploaded_file, api_key)
-            if vs:
-                st.session_state.vs = vs
-                st.session_state.txt = text
-                status.update(label="Analyse terminée !", state="complete")
-            else:
-                st.error(text)
+    uploaded_file = st.file_uploader("Document PDF", type="pdf", help="Chargez votre document ici")
+    
+    if uploaded_file and not st.session_state.processed:
+        if st.button("Lancer l'analyse", use_container_width=True, type="primary"):
+            with st.spinner("Indexation en cours..."):
+                text = get_pdf_text(uploaded_file)
+                if text:
+                    st.session_state.full_text = text
+                    st.session_state.vectorstore = create_vectorstore(text, api_key)
+                    st.session_state.processed = True
+                    st.rerun()
+
+    if st.session_state.processed:
+        if st.button("Réinitialiser", use_container_width=True):
+            st.session_state.processed = False
+            st.session_state.messages = []
+            st.rerun()
 
 # --- INTERFACE PRINCIPALE ---
-st.markdown('<h1 class="gemini-gradient">Insight PDF Pro</h1>', unsafe_allow_html=True)
-
-if not st.session_state.vs:
-    st.write("### Bonjour. Comment puis-je vous aider ?")
-    st.info("Importez un document dans le menu de gauche pour commencer l'analyse.")
-else:
-    # Affichage de l'historique du chat pour éviter les sauts de page
-    for message in st.session_state.chat_history:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
-
-    # Zone de saisie
-    query = st.chat_input("Posez votre question sur le PDF...")
+if not st.session_state.processed:
+    st.title("Bonjour.")
+    st.subheader("Posez des questions à vos documents complexes.")
+    st.write("Veuillez charger un fichier PDF dans la barre latérale pour commencer.")
     
-    if query:
-        # Afficher le message utilisateur
-        st.session_state.chat_history.append({"role": "user", "content": query})
-        with st.chat_message("user"):
-            st.markdown(query)
-        
-        # Réponse Assistant
-        with st.chat_message("assistant"):
-            with st.spinner("Recherche dans le document..."):
-                try:
-                    docs = st.session_state.vs.similarity_search(query, k=4)
-                    context = "\n\n".join([d.page_content for d in docs])
+    # Présentation visuelle simple
+    col1, col2, col3 = st.columns(3)
+    col1.help("Recherche sémantique précise")
+    col2.help("Analyse de données textuelles")
+    col3.help("Résumé et synthèse")
+else:
+    # Onglets pour séparer les fonctionnalités sans casser le DOM
+    tab_chat, tab_stats = st.tabs(["💬 Assistant Gemini", "📊 Statistiques"])
+
+    with tab_chat:
+        # Affichage des messages
+        for msg in st.session_state.messages:
+            with st.chat_message(msg["role"]):
+                st.write(msg["content"])
+
+        # Input utilisateur
+        if prompt := st.chat_input("Demandez une analyse..."):
+            st.session_state.messages.append({"role": "user", "content": prompt})
+            with st.chat_message("user"):
+                st.write(prompt)
+
+            with st.chat_message("assistant"):
+                with st.spinner("Réflexion..."):
+                    # Récupération contexte
+                    docs = st.session_state.vectorstore.similarity_search(prompt, k=3)
+                    context = "\n".join([d.page_content for d in docs])
                     
-                    resp = client.chat.complete(
+                    # Appel API
+                    response = client.chat.complete(
                         model="mistral-large-latest",
                         messages=[
-                            {"role": "system", "content": "Expert en analyse de documents PDF."},
-                            {"role": "user", "content": f"CONTEXTE:\n{context}\n\nQUESTION: {query}"}
+                            {"role": "system", "content": "Tu es un assistant analytique. Utilise le contexte fourni."},
+                            {"role": "user", "content": f"Contexte: {context}\n\nQuestion: {prompt}"}
                         ]
                     )
-                    answer = resp.choices[0].message.content
-                    st.markdown(answer)
-                    st.session_state.chat_history.append({"role": "assistant", "content": answer})
-                except Exception as e:
-                    st.error(f"Erreur de réponse: {e}")
+                    answer = response.choices[0].message.content
+                    st.write(answer)
+                    st.session_state.messages.append({"role": "assistant", "content": answer})
 
-# Footer simplifié pour la stabilité
-st.write("---")
-st.caption(f"© {datetime.now().year} Insight PDF Pro - Kandolo Herman")
+    with tab_stats:
+        st.subheader("Analyse du document")
+        words = st.session_state.full_text.split()
+        
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Nombre de mots", len(words))
+        c2.metric("Temps de lecture", f"{max(1, len(words)//200)} min")
+        c3.metric("Caractères", len(st.session_state.full_text))
+        
+        st.divider()
+        st.write("🔍 **Aperçu du texte extrait :**")
+        st.text_area("", st.session_state.full_text[:1500] + "...", height=300)
+
+# Footer
+st.markdown(f"---")
+st.caption(f"Développé par Kandolo Herman • {datetime.now().year}")
