@@ -21,146 +21,159 @@ load_dotenv()
 
 st.set_page_config(page_title="Insight PDF Pro", page_icon="✨", layout="wide")
 
-# --- PLUS DE st.markdown HTML complexe ---
-# Un seul bloc CSS minimal, sans classes dynamiques
-st.markdown("""
-    <style>
-    .main { background-color: #ffffff; }
-    </style>
-""", unsafe_allow_html=True)
-
-# --- LOGIQUE RAG ---
+# ─── LOGIQUE RAG ────────────────────────────────────────────────────────────
 def process_pdf(pdf_file, api_key):
     try:
         reader = PyPDF2.PdfReader(BytesIO(pdf_file.read()))
         text = "\n".join([p.extract_text() for p in reader.pages if p.extract_text()])
         if not text.strip():
             return None, "PDF vide ou image seule."
-        
         splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
         chunks = splitter.split_text(text)
-        
         db_name = f"db_{int(datetime.now().timestamp())}"
         embeddings = MistralAIEmbeddings(mistral_api_key=api_key)
         vectorstore = Chroma.from_texts(chunks, embeddings, collection_name=db_name)
-        
         return vectorstore, text
     except Exception as e:
         return None, str(e)
 
-# --- SESSION STATE ---
-if 'vs' not in st.session_state:
-    st.session_state.vs = None
-if 'txt' not in st.session_state:
-    st.session_state.txt = ""
-if 'chat_history' not in st.session_state:
-    st.session_state.chat_history = []
+# ─── SESSION STATE ───────────────────────────────────────────────────────────
+defaults = {
+    "vs": None,
+    "txt": "",
+    "chat_history": [],
+    "page": "assistant",   # navigation manuelle : "assistant" | "stats"
+    "ready": False,        # flag : PDF analysé ?
+}
+for k, v in defaults.items():
+    if k not in st.session_state:
+        st.session_state[k] = v
 
-# --- Validation clé API ---
+# ─── CLEF API ────────────────────────────────────────────────────────────────
 api_key = os.getenv("MISTRAL_API_KEY", "")
-client = None
-if api_key:
-    client = Mistral(api_key=api_key)
+client = Mistral(api_key=api_key) if api_key else None
 
-# --- SIDEBAR ---
+# ─── SIDEBAR ─────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("### 🛠️ Configuration")
-    
+
     if not api_key:
-        st.error("⚠️ Variable MISTRAL_API_KEY manquante dans les secrets.")
-    
-    file = st.file_uploader("Charger un document PDF", type=['pdf'])
-    
-    if file and st.button("Lancer l'Analyse ✨", use_container_width=True):
+        st.error("⚠️ MISTRAL_API_KEY manquante dans les secrets Streamlit.")
+
+    uploaded_file = st.file_uploader("Charger un document PDF", type=["pdf"])
+
+    if uploaded_file and st.button("Lancer l'analyse ✨", use_container_width=True):
         if not client:
-            st.error("Clé API Mistral non configurée.")
+            st.error("Clé API non configurée.")
         else:
-            with st.spinner("Analyse sémantique en cours..."):
-                vs, text = process_pdf(file, api_key)
-                if vs:
-                    st.session_state.vs = vs
-                    st.session_state.txt = text
-                    st.session_state.chat_history = []
-                    st.success("Analyse terminée !")
-                    # Pas de st.rerun() ici — on laisse Streamlit re-rendre naturellement
-                else:
-                    st.error(text)
+            with st.spinner("Analyse sémantique..."):
+                vs, result = process_pdf(uploaded_file, api_key)
+            if vs:
+                st.session_state.vs = vs
+                st.session_state.txt = result
+                st.session_state.chat_history = []
+                st.session_state.ready = True
+                st.session_state.page = "assistant"
+                st.success("✅ Analyse terminée !")
+                # PAS de st.rerun() — on laisse Streamlit re-rendre seul
+            else:
+                st.error(result)
 
-    if st.session_state.vs:
-        if st.button("Effacer tout", type="secondary", use_container_width=True):
-            st.session_state.vs = None
-            st.session_state.txt = ""
-            st.session_state.chat_history = []
-            # st.rerun() retiré — on utilise une clé de formulaire à la place
-            st.rerun()
+    if st.session_state.ready:
+        st.divider()
+        # Navigation : radio bouton simple = stable, pas de st.tabs()
+        page = st.radio(
+            "Vue",
+            ["💬 Assistant", "📊 Statistiques"],
+            index=0 if st.session_state.page == "assistant" else 1,
+            label_visibility="collapsed",
+        )
+        st.session_state.page = "assistant" if page == "💬 Assistant" else "stats"
 
-# --- INTERFACE PRINCIPALE ---
-# Titre natif Streamlit, pas de HTML
+        if st.button("🗑️ Effacer tout", use_container_width=True):
+            for k, v in defaults.items():
+                st.session_state[k] = v
+            st.rerun()   # seul rerun autorisé : reset complet, état propre
+
+# ─── PAGE PRINCIPALE ─────────────────────────────────────────────────────────
 st.title("✨ Insight PDF Pro")
 
-if not st.session_state.vs:
-    st.write("### Bonjour. Que souhaitez-vous analyser ?")
-    st.info("👈 Commencez par importer un document PDF dans le menu latéral.")
+if not st.session_state.ready:
+    st.info("👈 Importez un PDF dans le menu latéral pour commencer.")
+    st.stop()
 
-else:
-    tab1, tab2 = st.tabs(["💬 Assistant", "📊 Statistiques"])
+# ── VUE ASSISTANT ─────────────────────────────────────────────────────────────
+if st.session_state.page == "assistant":
 
-    with tab1:
-        for msg in st.session_state.chat_history:
-            with st.chat_message(msg["role"]):
-                st.markdown(msg["content"])
+    # Affichage de l'historique — rendu statique, aucun widget interactif dedans
+    for msg in st.session_state.chat_history:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
 
-        if prompt := st.chat_input("Posez votre question..."):
-            if not client:
-                st.error("Clé API Mistral non configurée.")
-            else:
-                st.session_state.chat_history.append({"role": "user", "content": prompt})
-                with st.chat_message("user"):
-                    st.markdown(prompt)
+    # Input séparé, hors de tout contexte conditionnel
+    prompt = st.chat_input("Posez votre question sur le document...")
 
-                with st.chat_message("assistant"):
-                    with st.spinner("Réflexion..."):
-                        try:
-                            docs = st.session_state.vs.similarity_search(prompt, k=4)
-                            context = "\n\n".join([d.page_content for d in docs])
-                            
-                            # Historique inclus dans le prompt (correction bonus)
-                            history_messages = [
-                                {"role": m["role"], "content": m["content"]}
-                                for m in st.session_state.chat_history[-6:]  # 3 derniers échanges
-                            ]
-                            
-                            response = client.chat.complete(
-                                model="mistral-large-latest",
-                                messages=[
-                                    {"role": "system", "content": f"Réponds uniquement à partir du contexte fourni.\n\nCONTEXTE:\n{context}"},
-                                    *history_messages,
-                                ]
-                            )
-                            answer = response.choices[0].message.content
-                            st.markdown(answer)
-                            st.session_state.chat_history.append({"role": "assistant", "content": answer})
-                        except Exception as e:
-                            st.error(f"Erreur lors de la génération : {e}")
+    if prompt:
+        if not client:
+            st.error("Clé API non configurée.")
+            st.stop()
 
-    with tab2:
-        words = len(st.session_state.txt.split())
-        reading_time = max(1, words // 200)
-        
-        # Composants natifs Streamlit — PLUS de st.markdown HTML pour les stats
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric(label="Mots", value=f"{words:,}")
-        with col2:
-            st.metric(label="Temps de lecture", value=f"{reading_time} min")
-        with col3:
-            st.metric(label="Richesse sémantique", value="Élevée")
-        
-        st.divider()
-        st.subheader("Extrait brut")
-        preview = st.session_state.txt[:2000]
-        if len(st.session_state.txt) > 2000:
-            preview += "..."
-        st.text_area("", preview, height=300)
+        st.session_state.chat_history.append({"role": "user", "content": prompt})
 
-st.caption(f"© {datetime.now().year} Insight PDF Pro - Kandolo Herman")
+        with st.chat_message("user"):
+            st.markdown(prompt)
+
+        with st.chat_message("assistant"):
+            with st.spinner("Réflexion..."):
+                try:
+                    docs = st.session_state.vs.similarity_search(prompt, k=4)
+                    context = "\n\n".join([d.page_content for d in docs])
+
+                    # Historique glissant (3 derniers échanges) inclus dans le prompt
+                    history = st.session_state.chat_history[-6:]
+                    messages = [
+                        {
+                            "role": "system",
+                            "content": (
+                                "Tu es un assistant expert. "
+                                "Réponds uniquement à partir du contexte fourni, "
+                                "en français.\n\nCONTEXTE:\n" + context
+                            ),
+                        },
+                        *[{"role": m["role"], "content": m["content"]} for m in history],
+                    ]
+
+                    response = client.chat.complete(
+                        model="mistral-large-latest",
+                        messages=messages,
+                    )
+                    answer = response.choices[0].message.content
+                    st.markdown(answer)
+                    st.session_state.chat_history.append(
+                        {"role": "assistant", "content": answer}
+                    )
+                except Exception as e:
+                    st.error(f"Erreur lors de la génération : {e}")
+
+# ── VUE STATISTIQUES ──────────────────────────────────────────────────────────
+elif st.session_state.page == "stats":
+
+    words = len(st.session_state.txt.split())
+    chars = len(st.session_state.txt)
+    reading_time = max(1, words // 200)
+
+    # st.metric() — composant natif, zéro HTML injecté
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Mots", f"{words:,}")
+    col2.metric("Temps de lecture", f"{reading_time} min")
+    col3.metric("Caractères", f"{chars:,}")
+
+    st.divider()
+    st.subheader("Aperçu du texte extrait")
+    preview = st.session_state.txt[:2000]
+    if len(st.session_state.txt) > 2000:
+        preview += "\n\n[...]"
+    st.text_area("", preview, height=300, disabled=True)
+
+# ─── FOOTER ──────────────────────────────────────────────────────────────────
+st.caption(f"© {datetime.now().year} Insight PDF Pro — Kandolo Herman")
