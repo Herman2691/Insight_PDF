@@ -15,26 +15,7 @@ from pptx.enum.text import PP_ALIGN
 from pptx.dml.color import RGBColor
 #
 
-# CSS pour masquer spécifiquement l'icône GitHub
-st.markdown(
-    """
-    <style>
-    .viewerBadge_container__1QS1n {
-        display: none !important;
-    }
-    #MainMenu {
-        visibility: hidden;
-    }
-    header {
-        visibility: hidden;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
 
-
-#
 
 
 
