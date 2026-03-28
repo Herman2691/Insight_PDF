@@ -13,6 +13,30 @@ from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.enum.text import PP_ALIGN
 from pptx.dml.color import RGBColor
+#
+
+# CSS pour masquer spécifiquement l'icône GitHub
+st.markdown(
+    """
+    <style>
+    .viewerBadge_container__1QS1n {
+        display: none !important;
+    }
+    #MainMenu {
+        visibility: hidden;
+    }
+    header {
+        visibility: hidden;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+
+#
+
+
 
 # --- CONFIGURATION & STYLE GEMINI ---
 st.set_page_config(page_title="Insight PDF Pro", page_icon="✨", layout="wide")
