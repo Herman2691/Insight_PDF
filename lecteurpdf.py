@@ -17,51 +17,6 @@ from pptx.dml.color import RGBColor
 
 
 
-# Injection CSS ciblée pour masquer l'icône GitHub et le bouton de déploiement
-st.markdown(
-    """
-    <style>
-    /* Masquer le bouton de déploiement et l'icône GitHub en haut à droite */
-    .stAppDeployButton {
-        display: none !important;
-    }
-    
-    /* Masquer le lien GitHub dans le menu burger (optionnel) */
-    #MainMenu {
-        visibility: hidden;
-    }
-
-    /* S'assurer que le header ne prend pas de place inutile */
-    header[data-testid="stHeader"] {
-        background-color: rgba(0,0,0,0);
-        color: rgba(0,0,0,0);
-    }
-    
-    /* Supprimer le badge Streamlit en bas de page (optionnel) */
-    footer {
-        display: none !important;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
-
-# Votre code Insight PDF ici...
-st.title("Insight PDF")
-st.sidebar.title("Importation")
-uploaded_file = st.sidebar.file_uploader("Drag and drop file here", type="pdf")
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
