@@ -1,25 +1,16 @@
-# Interface et Environnement
+# Core Framework & UI
 streamlit>=1.38.0
 python-dotenv
 
-# IA et LLM (Versions stables demandées)
-mistralai==0.4.2
-langchain
-langchain-community
-langchain-mistralai
-langchain-text-splitters
-
-# Base de données Vectorielle (RAG)
-chromadb
-pysqlite3-binary
-
-# Traitement de fichiers et documents
-PyPDF2
-python-pptx
-
-# Multimédia
-gTTS
-
+# LlamaIndex & Connecteurs Mistral (Le moteur de ton RAG)
 llama-index
 llama-index-llms-mistralai
 llama-index-embeddings-mistralai
+mistralai>=0.4.2
+
+# Traitement de documents
+PyPDF2
+python-pptx
+
+# Multimédia (Audio)
+gTTS
