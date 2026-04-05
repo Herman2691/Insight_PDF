@@ -11,15 +11,7 @@ from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
 
-# --- CORRECTION CRITIQUE DES IMPORTS MISTRAL ---
-try:
-    # Nouvelle version (0.4.2+)
-    from mistralai import Mistral as MistralClient
-except ImportError:
-    # Ancienne version (au cas où)
-    from mistralai.client import MistralClient
-
-# --- IMPORTS LLAMA-INDEX ---
+# --- IMPORTS LLAMA-INDEX (Ils gèrent Mistral en interne) ---
 from llama_index.core import Document, VectorStoreIndex, Settings
 from llama_index.llms.mistralai import MistralAI
 from llama_index.embeddings.mistralai import MistralAIEmbedding
@@ -46,13 +38,13 @@ st.markdown("""
 def setup_engines():
     api_key = st.secrets.get("MISTRAL_API_KEY") or os.getenv("MISTRAL_API_KEY")
     if api_key:
-        # Configuration globale LlamaIndex (RAG)
+        # On configure LlamaIndex pour utiliser Mistral pour le texte ET les embeddings
         Settings.llm = MistralAI(model="mistral-large-latest", api_key=api_key, temperature=0)
         Settings.embed_model = MistralAIEmbedding(model_name="mistral-embed", api_key=api_key)
-        return api_key
-    return None
+        return True
+    return False
 
-api_key_val = setup_engines()
+engine_ready = setup_engines()
 
 # --- FONCTIONS UTILITAIRES ---
 def extract_pdf_data(pdf_file):
@@ -61,28 +53,42 @@ def extract_pdf_data(pdf_file):
     full_text = "\n".join(pages_text.values())
     return pages_text, full_text
 
-def create_pptx(data, style_name="Professionnel"):
+def create_pptx(data):
     prs = Presentation()
-    bg_color = RGBColor(30, 60, 114) if style_name == "Professionnel" else RGBColor(245, 245, 245)
+    # Style Pro (Bleu sombre)
+    bg_color = RGBColor(30, 60, 114) 
     for slide_data in data.get("slides", []):
         slide = prs.slides.add_slide(prs.slide_layouts[6])
         slide.background.fill.solid()
         slide.background.fill.fore_color.rgb = bg_color
+        
+        # Titre en blanc
         tb = slide.shapes.add_textbox(Inches(0.5), Inches(0.5), Inches(9), Inches(1))
-        tb.text_frame.text = slide_data.get("titre", "Slide")
+        tf = tb.text_frame
+        tf.text = slide_data.get("titre", "Slide")
+        p_titre = tf.paragraphs[0]
+        p_titre.font.color.rgb = RGBColor(255, 255, 255)
+        p_titre.font.bold = True
+        
+        # Points en blanc
         content = slide.shapes.add_textbox(Inches(1), Inches(2), Inches(8), Inches(4))
+        cf = content.text_frame
         for pt in slide_data.get("points", []):
-            p = content.text_frame.add_paragraph()
+            p = cf.add_paragraph()
             p.text = f"• {pt}"
             p.font.size = Pt(18)
-            p.font.color.rgb = RGBColor(255, 255, 255) if style_name == "Professionnel" else RGBColor(0, 0, 0)
+            p.font.color.rgb = RGBColor(255, 255, 255)
+            
     ppt_io = BytesIO()
     prs.save(ppt_io)
     return ppt_io.getvalue()
 
-# --- INTERFACE PRINCIPALE ---
+# --- INTERFACE ---
 st.markdown('<h1 class="gemini-gradient">Insight PDF Pro</h1>', unsafe_allow_html=True)
 st.caption(f"Développé par Herman Kandolo • {datetime.now().year}")
+
+if not engine_ready:
+    st.error("Clé API Mistral manquante dans les secrets.")
 
 with st.sidebar:
     st.subheader("📤 Importation")
@@ -93,6 +99,7 @@ with st.sidebar:
                 pages, full_text = extract_pdf_data(uploaded_file)
                 st.session_state.pdf_pages = pages
                 st.session_state.full_text = full_text
+                # Création de l'index
                 doc = Document(text=full_text)
                 st.session_state.index = VectorStoreIndex.from_documents([doc])
             st.success("Analyse terminée !")
@@ -111,10 +118,9 @@ if 'index' in st.session_state:
             with st.chat_message("user"): st.markdown(prompt)
             with st.chat_message("assistant", avatar="✨"):
                 qe = st.session_state.index.as_query_engine(similarity_top_k=3)
-                instr = f"Réponds via le doc. Si absent, dis que tu ne sais pas. Question: {prompt}"
-                response = qe.query(instr)
-                st.markdown(response.response)
-                st.session_state.messages.append({"role": "assistant", "content": response.response})
+                res = qe.query(f"Réponds via le doc. Sinon dis que tu ne sais pas. Question: {prompt}")
+                st.markdown(res.response)
+                st.session_state.messages.append({"role": "assistant", "content": res.response})
 
     # TAB 2 : SYNTHÈSE
     with tabs[1]:
@@ -140,39 +146,33 @@ if 'index' in st.session_state:
 
     # TAB 4 : AUDIO
     with tabs[3]:
-        page_num = st.number_input("Page à lire", 1, len(st.session_state.pdf_pages), 1)
+        p_num = st.number_input("Page à lire", 1, len(st.session_state.pdf_pages), 1)
         if st.button("Générer l'audio"):
-            tts = gTTS(text=st.session_state.pdf_pages[page_num], lang='fr')
+            tts = gTTS(text=st.session_state.pdf_pages[p_num], lang='fr')
             audio_io = BytesIO()
             tts.write_to_fp(audio_io)
             st.audio(audio_io)
 
-    # TAB 5 : PRÉSENTATION (BLINDÉ)
+    # TAB 5 : PRÉSENTATION
     with tabs[4]:
         n_slides = st.number_input("Nombre de slides", 3, 10, 5)
         if st.button("Générer PPTX"):
             with st.spinner("L'IA structure vos slides..."):
                 try:
-                    # Mode compact pour éviter les erreurs de timeout Mistral
                     qe = st.session_state.index.as_query_engine(response_mode="compact")
-                    prompt_ppt = (
+                    p_ppt = (
                         f"Crée une structure pour {n_slides} slides. "
                         f"Réponds UNIQUEMENT avec un JSON valide : "
                         f"{{\"slides\": [{{\"titre\": \"...\", \"points\": [\"...\", \"...\"]}}]}}"
                     )
-                    raw_res = str(qe.query(prompt_ppt).response)
-                    
-                    # Nettoyage ultra-robuste du JSON
-                    start = raw_res.find('{')
-                    end = raw_res.rfind('}') + 1
+                    raw = str(qe.query(p_ppt).response)
+                    start, end = raw.find('{'), raw.rfind('}') + 1
                     if start != -1 and end > 0:
-                        data_ppt = json.loads(raw_res[start:end])
-                        ppt_bytes = create_pptx(data_ppt)
-                        st.download_button("📥 Télécharger", ppt_bytes, "presentation.pptx")
+                        data = json.loads(raw[start:end])
+                        ppt = create_pptx(data)
+                        st.download_button("📥 Télécharger", ppt, "presentation.pptx")
                         st.success("Prêt !")
-                    else:
-                        st.error("L'IA a été trop bavarde. Réessayez.")
-                except Exception as e:
-                    st.error(f"Erreur de génération : {str(e)}")
+                    else: st.error("Échec du formatage JSON.")
+                except Exception as e: st.error(f"Erreur : {e}")
 else:
     st.info("Veuillez charger un PDF.")
