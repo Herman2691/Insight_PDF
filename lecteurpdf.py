@@ -42,6 +42,15 @@ html, body, [class*="css"] { font-family: 'Google Sans', sans-serif; }
     border-top: 1px solid #e1e3e1;
     box-shadow: 0 -2px 8px rgba(0,0,0,0.06);
 }
+/* Texte visible dans la zone de saisie */
+[data-testid="stChatInput"] textarea {
+    color: #1a1a1a !important;
+    background-color: #ffffff !important;
+    caret-color: #1a1a1a !important;
+}
+[data-testid="stChatInput"] textarea::placeholder {
+    color: #999999 !important;
+}
 /* Espace en bas pour ne pas cacher le dernier message */
 [data-testid="stChatMessageContainer"] {
     padding-bottom: 80px;
