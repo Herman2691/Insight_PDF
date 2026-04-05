@@ -30,6 +30,28 @@ html, body, [class*="css"] { font-family: 'Google Sans', sans-serif; }
     background-color: #f8f9fa;
     border-right: 1px solid #e1e3e1;
 }
+/* Zone de saisie fixée en bas */
+[data-testid="stChatInput"] {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    background: white;
+    padding: 12px 24px;
+    border-top: 1px solid #e1e3e1;
+    box-shadow: 0 -2px 8px rgba(0,0,0,0.06);
+}
+/* Espace en bas pour ne pas cacher le dernier message */
+[data-testid="stChatMessageContainer"] {
+    padding-bottom: 80px;
+}
+/* Bulles messages */
+[data-testid="stChatMessage"] {
+    border-radius: 16px;
+    margin-bottom: 8px;
+    padding: 4px 8px;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -268,11 +290,11 @@ with st.sidebar:
             st.info(f"📄 {file_key} déjà chargé.")
 
     if "pdf_pages" in st.session_state:
-        st.divider()
-        st.metric("Pages", len(st.session_state.pdf_pages))
-        st.metric("Chunks RAG", len(st.session_state.get("chunks", [])))
-        st.metric("Caractères", f"{len(st.session_state.full_text):,}")
-        with st.expander("⚙️ Paramètres RAG"):
+        with st.expander("ℹ️ Détails du document"):
+            st.metric("Pages", len(st.session_state.pdf_pages))
+            st.metric("Chunks RAG", len(st.session_state.get("chunks", [])))
+            st.metric("Caractères", f"{len(st.session_state.full_text):,}")
+            st.divider()
             st.session_state.top_k = st.slider(
                 "Chunks retenus par requête", 1, 8,
                 st.session_state.get("top_k", 4)
