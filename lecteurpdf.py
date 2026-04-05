@@ -13,14 +13,8 @@ from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.enum.text import PP_ALIGN
 from pptx.dml.color import RGBColor
-#
 
-
-
-
-
-
-# --- CONFIGURATION & STYLE GEMINI ---
+# --- CONFIGURATION & STYLE ---
 st.set_page_config(page_title="Insight PDF Pro", page_icon="✨", layout="wide")
 
 st.markdown("""
@@ -40,7 +34,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- LOGIQUE TECHNIQUE MISTRAL ---
+# --- LOGIQUE TECHNIQUE MISTRAL (CORRIGÉE POUR ÉVITER L'HALLUCINATION) ---
 def get_mistral_client():
     api_key = st.secrets.get("MISTRAL_API_KEY") or os.getenv("MISTRAL_API_KEY")
     return MistralClient(api_key=api_key)
@@ -48,11 +42,28 @@ def get_mistral_client():
 def query_mistral(prompt, context=""):
     try:
         client = get_mistral_client()
+        
+        # PROMPT DE SÉCURITÉ : Force l'IA à rester dans le document
+        system_instruction = (
+            "Tu es un assistant expert en analyse de documents. "
+            "Tu dois répondre aux questions en utilisant UNIQUEMENT le CONTEXTE fourni ci-dessous. "
+            "Si la réponse ne se trouve pas dans le contexte, ou si la question n'a aucun rapport avec "
+            "le contenu du document, réponds exactement : 'Désolé, mais cette information n'est pas "
+            "présente dans le document fourni.' Ne tente jamais d'utiliser tes propres connaissances "
+            "externes pour compléter une réponse manquante."
+        )
+
         messages = [
-            ChatMessage(role="system", content="Tu es un assistant expert en analyse de documents."),
-            ChatMessage(role="user", content=f"CONTEXTE:\n{context}\n\nINSTRUCTION: {prompt}")
+            ChatMessage(role="system", content=system_instruction),
+            ChatMessage(role="user", content=f"CONTEXTE DU DOCUMENT :\n{context}\n\nQUESTION : {prompt}")
         ]
-        response = client.chat(model="mistral-large-latest", messages=messages)
+        
+        # Température à 0 pour une précision maximale (zéro créativité)
+        response = client.chat(
+            model="mistral-large-latest", 
+            messages=messages,
+            temperature=0
+        )
         return response.choices[0].message.content
     except Exception as e:
         return f"Erreur API : {str(e)}"
@@ -64,12 +75,10 @@ def extract_pdf_text(pdf_file):
 
 def create_pptx(data, style_name):
     prs = Presentation()
-    # Logique simplifiée de création (Professionnel par défaut)
     bg_color = RGBColor(30, 60, 114) if style_name == "Professionnel" else RGBColor(245, 245, 245)
     
     for slide_data in data.get("slides", []):
         slide = prs.slides.add_slide(prs.slide_layouts[6])
-        # Appliquer fond
         fill = slide.background.fill
         fill.solid()
         fill.fore_color.rgb = bg_color
@@ -119,7 +128,8 @@ if 'pdf_text' in st.session_state:
             with st.chat_message("user"): st.markdown(prompt)
             
             with st.chat_message("assistant", avatar="✨"):
-                response = query_mistral(prompt, st.session_state.full_text[:10000])
+                # On passe une partie du texte (ajuster selon les limites de tokens si besoin)
+                response = query_mistral(prompt, st.session_state.full_text[:15000])
                 st.markdown(response)
                 st.session_state.messages.append({"role": "assistant", "content": response})
 
@@ -164,10 +174,9 @@ if 'pdf_text' in st.session_state:
         p_style = st.selectbox("Style visuel", ["Professionnel", "Moderne", "Minimaliste"])
         if st.button("Générer le PowerPoint"):
             with st.spinner("L'IA structure vos slides..."):
-                prompt_ppt = f"Crée une structure JSON pour {n_slides} slides : {{'slides': [{{'titre': '...', 'points': ['...']}}]}}"
+                prompt_ppt = f"Crée une structure JSON pour {n_slides} slides basée sur ce document : {{'slides': [{{'titre': '...', 'points': ['...']}}]}}"
                 structure_raw = query_mistral(prompt_ppt, st.session_state.full_text[:10000])
                 try:
-                    # Nettoyage simple du JSON si Mistral ajoute du texte autour
                     json_str = re.search(r'\{.*\}', structure_raw, re.DOTALL).group()
                     data_ppt = json.loads(json_str)
                     ppt_bytes = create_pptx(data_ppt, p_style)
