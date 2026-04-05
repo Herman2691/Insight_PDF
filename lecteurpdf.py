@@ -1,10 +1,4 @@
 import streamlit as st
-# CORRECTION DE L'IMPORT MISTRAL
-try:
-    from mistralai import Mistral as MistralClient
-except ImportError:
-    from mistralai.client import MistralClient
-
 import PyPDF2
 from io import BytesIO
 import json
@@ -16,6 +10,14 @@ from gtts import gTTS
 from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
+
+# --- CORRECTION CRITIQUE DES IMPORTS MISTRAL ---
+try:
+    # Nouvelle version (0.4.2+)
+    from mistralai import Mistral as MistralClient
+except ImportError:
+    # Ancienne version (au cas où)
+    from mistralai.client import MistralClient
 
 # --- IMPORTS LLAMA-INDEX ---
 from llama_index.core import Document, VectorStoreIndex, Settings
@@ -40,17 +42,17 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- CONFIGURATION DES MOTEURS ---
+# --- CONFIGURATION DES MOTEURS IA ---
 def setup_engines():
     api_key = st.secrets.get("MISTRAL_API_KEY") or os.getenv("MISTRAL_API_KEY")
     if api_key:
-        # Configuration LlamaIndex
+        # Configuration globale LlamaIndex (RAG)
         Settings.llm = MistralAI(model="mistral-large-latest", api_key=api_key, temperature=0)
         Settings.embed_model = MistralAIEmbedding(model_name="mistral-embed", api_key=api_key)
-        return api_key # On retourne juste la clé pour l'usage ultérieur
+        return api_key
     return None
 
-api_key = setup_engines()
+api_key_val = setup_engines()
 
 # --- FONCTIONS UTILITAIRES ---
 def extract_pdf_data(pdf_file):
@@ -78,9 +80,9 @@ def create_pptx(data, style_name="Professionnel"):
     prs.save(ppt_io)
     return ppt_io.getvalue()
 
-# --- INTERFACE ---
+# --- INTERFACE PRINCIPALE ---
 st.markdown('<h1 class="gemini-gradient">Insight PDF Pro</h1>', unsafe_allow_html=True)
-st.caption(f"Développé par Herman Kandolo • 2026")
+st.caption(f"Développé par Herman Kandolo • {datetime.now().year}")
 
 with st.sidebar:
     st.subheader("📤 Importation")
@@ -145,12 +147,13 @@ if 'index' in st.session_state:
             tts.write_to_fp(audio_io)
             st.audio(audio_io)
 
-    # TAB 5 : PRÉSENTATION (CORRIGÉ)
+    # TAB 5 : PRÉSENTATION (BLINDÉ)
     with tabs[4]:
         n_slides = st.number_input("Nombre de slides", 3, 10, 5)
         if st.button("Générer PPTX"):
             with st.spinner("L'IA structure vos slides..."):
                 try:
+                    # Mode compact pour éviter les erreurs de timeout Mistral
                     qe = st.session_state.index.as_query_engine(response_mode="compact")
                     prompt_ppt = (
                         f"Crée une structure pour {n_slides} slides. "
@@ -159,7 +162,7 @@ if 'index' in st.session_state:
                     )
                     raw_res = str(qe.query(prompt_ppt).response)
                     
-                    # Nettoyage manuel du JSON (Plus robuste que la regex)
+                    # Nettoyage ultra-robuste du JSON
                     start = raw_res.find('{')
                     end = raw_res.rfind('}') + 1
                     if start != -1 and end > 0:
@@ -167,8 +170,9 @@ if 'index' in st.session_state:
                         ppt_bytes = create_pptx(data_ppt)
                         st.download_button("📥 Télécharger", ppt_bytes, "presentation.pptx")
                         st.success("Prêt !")
-                    else: st.error("L'IA n'a pas renvoyé de JSON valide.")
+                    else:
+                        st.error("L'IA a été trop bavarde. Réessayez.")
                 except Exception as e:
-                    st.error(f"Erreur : {str(e)}")
+                    st.error(f"Erreur de génération : {str(e)}")
 else:
     st.info("Veuillez charger un PDF.")
