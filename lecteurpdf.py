@@ -34,33 +34,94 @@ html, body, [class*="css"] { font-family: 'Google Sans', sans-serif; }
 """, unsafe_allow_html=True)
 
 
-# --- CLIENT MISTRAL DIRECT (sans llama-index) ---
+# ============================================================
+# CHUNKING MANUEL
+# ============================================================
+
+def split_into_chunks(text: str, chunk_size: int = 2000, overlap: int = 200) -> list[str]:
+    """
+    Découpe le texte en chunks avec chevauchement pour ne pas perdre
+    le contexte entre deux chunks.
+    - chunk_size : nb de caractères par chunk
+    - overlap    : nb de caractères partagés entre chunks consécutifs
+    """
+    chunks = []
+    start = 0
+    text_len = len(text)
+
+    while start < text_len:
+        end = start + chunk_size
+
+        # On coupe proprement à la fin d'une phrase si possible
+        if end < text_len:
+            # Cherche le dernier point/retour ligne avant end
+            cut = max(
+                text.rfind(". ", start, end),
+                text.rfind("\n", start, end)
+            )
+            if cut > start + chunk_size // 2:
+                end = cut + 1  # inclut le point
+
+        chunk = text[start:end].strip()
+        if chunk:
+            chunks.append(chunk)
+
+        start = end - overlap  # recul pour le chevauchement
+
+    return chunks
+
+
+def score_chunk(chunk: str, question: str) -> float:
+    """
+    Score de pertinence simple basé sur le nombre de mots de la question
+    présents dans le chunk (recherche par mots-clés).
+    """
+    q_words = set(re.findall(r'\b\w{3,}\b', question.lower()))
+    c_words = set(re.findall(r'\b\w{3,}\b', chunk.lower()))
+    if not q_words:
+        return 0.0
+    return len(q_words & c_words) / len(q_words)
+
+
+def retrieve_best_chunks(chunks: list[str], question: str, top_k: int = 4) -> str:
+    """
+    Sélectionne les top_k chunks les plus pertinents pour la question.
+    Retourne leur contenu concaténé comme contexte pour Mistral.
+    """
+    scored = [(score_chunk(c, question), i, c) for i, c in enumerate(chunks)]
+    scored.sort(key=lambda x: (-x[0], x[1]))  # tri par score desc, puis ordre naturel
+    best = scored[:top_k]
+    # Retrie par ordre d'apparition dans le doc pour cohérence
+    best.sort(key=lambda x: x[1])
+    return "\n\n---\n\n".join(c for _, _, c in best)
+
+
+# ============================================================
+# CLIENT MISTRAL
+# ============================================================
+
 def get_client():
     api_key = st.secrets.get("MISTRAL_API_KEY") or os.getenv("MISTRAL_API_KEY")
     if not api_key:
         return None
     return Mistral(api_key=api_key)
 
-def ask_mistral(client, context: str, question: str) -> str:
+
+def ask_mistral(client, context: str, question: str, system_prompt: str = None) -> str:
+    """Appel direct à Mistral avec contexte et question."""
+    if system_prompt is None:
+        system_prompt = (
+            "Tu es un assistant expert en analyse de documents. "
+            "Réponds uniquement en te basant sur les extraits du document fournis. "
+            "Si la réponse n'est pas dans les extraits, dis-le clairement. "
+            "Réponds toujours en français sauf si demandé autrement."
+        )
     try:
-        max_chars = 25000
-        ctx = context[:max_chars] if len(context) > max_chars else context
         response = client.chat.complete(
             model="mistral-large-latest",
             messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "Tu es un assistant expert en analyse de documents. "
-                        "Réponds uniquement en te basant sur le document fourni. "
-                        "Si la réponse n'est pas dans le document, dis-le clairement. "
-                        "Réponds toujours en français sauf si demandé autrement."
-                    )
-                },
-                {
-                    "role": "user",
-                    "content": f"DOCUMENT:\n{ctx}\n\nQUESTION: {question}"
-                }
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"EXTRAITS DU DOCUMENT:\n{context}\n\nQUESTION: {question}"}
             ],
             temperature=0,
             max_tokens=1500
@@ -70,7 +131,36 @@ def ask_mistral(client, context: str, question: str) -> str:
         return f"Erreur Mistral : {e}"
 
 
-# --- FONCTIONS UTILITAIRES ---
+def ask_with_rag(client, question: str, top_k: int = 4) -> str:
+    """
+    Pipeline RAG manuel :
+    1. Récupère les chunks les plus pertinents
+    2. Les envoie à Mistral comme contexte
+    """
+    chunks = st.session_state.get("chunks", [])
+    if not chunks:
+        return "Aucun document chargé."
+
+    context = retrieve_best_chunks(chunks, question, top_k=top_k)
+    return ask_mistral(client, context, question)
+
+
+def ask_full_or_rag(client, question: str) -> str:
+    """
+    Si le doc est court (<25 000 chars) → envoie tout le texte.
+    Si le doc est long → utilise le RAG par chunks.
+    """
+    full_text = st.session_state.get("full_text", "")
+    if len(full_text) <= 25000:
+        return ask_mistral(client, full_text, question)
+    else:
+        return ask_with_rag(client, question)
+
+
+# ============================================================
+# FONCTIONS UTILITAIRES
+# ============================================================
+
 def extract_pdf_data(pdf_file):
     reader = PyPDF2.PdfReader(BytesIO(pdf_file.read()))
     pages_text = {}
@@ -112,7 +202,10 @@ def create_pptx(data):
     return ppt_io.getvalue()
 
 
-# --- INTERFACE ---
+# ============================================================
+# INTERFACE
+# ============================================================
+
 st.title("✨ Insight PDF Pro")
 st.caption(f"Développé par Herman Kandolo • {datetime.now().year}")
 
@@ -129,31 +222,49 @@ with st.sidebar:
     if uploaded_file:
         file_key = uploaded_file.name
         if st.session_state.get("loaded_file") != file_key:
-            with st.spinner("Extraction du texte..."):
+            with st.spinner("Extraction et découpage du texte..."):
                 pages, full_text = extract_pdf_data(uploaded_file)
                 if not full_text.strip():
                     st.error("Le PDF semble vide ou non lisible (PDF scanné ?).")
                     st.stop()
+
+                # Découpage en chunks
+                chunks = split_into_chunks(full_text, chunk_size=2000, overlap=200)
+
                 st.session_state.pdf_pages = pages
                 st.session_state.full_text = full_text
+                st.session_state.chunks = chunks
                 st.session_state.messages = []
                 st.session_state.loaded_file = file_key
-            st.success(f"✅ {len(pages)} pages chargées !")
+
+            st.success(f"✅ {len(pages)} pages • {len(chunks)} chunks")
         else:
             st.info(f"📄 {file_key} déjà chargé.")
 
     if "pdf_pages" in st.session_state:
         st.divider()
         st.metric("Pages", len(st.session_state.pdf_pages))
+        st.metric("Chunks RAG", len(st.session_state.get("chunks", [])))
         st.metric("Caractères", f"{len(st.session_state.full_text):,}")
 
+        # Paramètre chunks avancé
+        with st.expander("⚙️ Paramètres RAG"):
+            st.session_state.top_k = st.slider(
+                "Chunks retenus par requête", 1, 8,
+                st.session_state.get("top_k", 4)
+            )
 
-# --- ONGLETS PRINCIPAUX ---
+
+# --- ONGLETS ---
 if "pdf_pages" in st.session_state:
     tabs = st.tabs(["💬 Chat", "📝 Synthèse", "📊 Analyse", "🔊 Audio", "🎯 Présentation"])
 
     # TAB 1 : CHAT
     with tabs[0]:
+        is_long = len(st.session_state.full_text) > 25000
+        if is_long:
+            st.caption(f"📚 Document long détecté — mode RAG actif ({len(st.session_state.chunks)} chunks)")
+
         if "messages" not in st.session_state:
             st.session_state.messages = []
 
@@ -166,8 +277,9 @@ if "pdf_pages" in st.session_state:
             with st.chat_message("user"):
                 st.write(prompt)
             with st.chat_message("assistant", avatar="✨"):
-                with st.spinner("Analyse en cours..."):
-                    response = ask_mistral(client, st.session_state.full_text, prompt)
+                with st.spinner("Recherche dans le document..."):
+                    top_k = st.session_state.get("top_k", 4)
+                    response = ask_full_or_rag(client, prompt)
                     st.write(response)
                     st.session_state.messages.append({"role": "assistant", "content": response})
 
@@ -178,12 +290,26 @@ if "pdf_pages" in st.session_state:
             options=["Court", "Moyen", "Détaillé"],
             value="Moyen"
         )
-        longueur = {"Court": "en 5 phrases", "Moyen": "en 10-15 phrases", "Détaillé": "de manière exhaustive"}
+        longueur = {
+            "Court": "en 5 phrases",
+            "Moyen": "en 10-15 phrases",
+            "Détaillé": "de manière exhaustive"
+        }
 
         if st.button("📝 Rédiger le résumé", key="btn_resume"):
             with st.spinner("Génération du résumé..."):
                 question = f"Fais un résumé structuré {longueur[s_mode]} de ce document, avec des sections claires."
-                result = ask_mistral(client, st.session_state.full_text, question)
+                # Pour la synthèse on veut couvrir tout le doc → on concatène les chunks espacés
+                full_text = st.session_state.full_text
+                if len(full_text) > 25000:
+                    # Echantillonnage régulier des chunks pour couvrir tout le document
+                    chunks = st.session_state.chunks
+                    step = max(1, len(chunks) // 8)
+                    sampled = chunks[::step][:8]
+                    context = "\n\n---\n\n".join(sampled)
+                else:
+                    context = full_text
+                result = ask_mistral(client, context, question)
                 st.info(result)
 
     # TAB 3 : ANALYSE
@@ -193,13 +319,15 @@ if "pdf_pages" in st.session_state:
         stop_words = {
             "les", "des", "une", "que", "qui", "dans", "pour", "avec", "sur",
             "par", "est", "sont", "this", "that", "from", "have", "been",
-            "will", "leur", "leurs", "mais", "donc", "comme", "plus", "aussi"
+            "will", "leur", "leurs", "mais", "donc", "comme", "plus", "aussi",
+            "tout", "tous", "très", "bien", "être", "avoir", "faire", "plus"
         }
         freq = Counter([w for w in words if len(w) > 3 and w not in stop_words])
 
         with col1:
             st.metric("Mots totaux", f"{len(words):,}")
             st.metric("Pages analysées", len(st.session_state.pdf_pages))
+            st.metric("Chunks créés", len(st.session_state.get("chunks", [])))
             st.subheader("🔑 Mots-clés fréquents")
             for w, c in freq.most_common(10):
                 st.write(f"- **{w}** : {c} occurrences")
@@ -207,9 +335,8 @@ if "pdf_pages" in st.session_state:
         with col2:
             if st.button("🔍 Analyse sémantique", key="btn_semantic"):
                 with st.spinner("Analyse en cours..."):
-                    result = ask_mistral(
+                    result = ask_full_or_rag(
                         client,
-                        st.session_state.full_text,
                         "Quels sont les thèmes principaux de ce document ? Liste-les et explique chacun brièvement."
                     )
                     st.write(result)
@@ -247,7 +374,7 @@ if "pdf_pages" in st.session_state:
                         f"Réponds UNIQUEMENT avec un JSON valide, sans texte avant ou après, sans balises markdown : "
                         f'{{ "slides": [ {{ "titre": "Titre de la slide", "points": ["Point 1", "Point 2", "Point 3"] }} ] }}'
                     )
-                    raw = ask_mistral(client, st.session_state.full_text, question)
+                    raw = ask_full_or_rag(client, question)
                     raw = raw.strip()
                     if raw.startswith("```"):
                         raw = re.sub(r"```(?:json)?", "", raw).strip("` \n")
