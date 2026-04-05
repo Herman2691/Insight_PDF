@@ -34,7 +34,7 @@ html, body, [class*="css"] { font-family: 'Google Sans', sans-serif; }
 """, unsafe_allow_html=True)
 
 # ============================================================
-# PROMPT ANTI-HALLUCINATION (utilisé partout)
+# PROMPT ANTI-HALLUCINATION
 # ============================================================
 
 SYSTEM_PROMPT = (
@@ -46,45 +46,85 @@ SYSTEM_PROMPT = (
 )
 
 # ============================================================
-# CHUNKING MANUEL
+# CHUNKING MANUEL AVEC NUMÉROS DE PAGE
 # ============================================================
 
-def split_into_chunks(text: str, chunk_size: int = 2000, overlap: int = 200) -> list:
+def split_into_chunks(pages_text: dict, chunk_size: int = 2000, overlap: int = 200) -> list:
+    """
+    Découpe le texte en chunks en conservant le numéro de page source.
+    Retourne une liste de dicts : {"text": "...", "pages": [3, 4]}
+    """
     chunks = []
+
+    # On construit une liste de (page_num, texte) pour tracker la page d'origine
+    page_boundaries = []
+    full_text = ""
+    for page_num, text in sorted(pages_text.items()):
+        start_pos = len(full_text)
+        full_text += text + "\n"
+        end_pos = len(full_text)
+        page_boundaries.append((page_num, start_pos, end_pos))
+
+    # Découpe en chunks avec chevauchement
     start = 0
-    text_len = len(text)
+    text_len = len(full_text)
 
     while start < text_len:
         end = start + chunk_size
+
         if end < text_len:
             cut = max(
-                text.rfind(". ", start, end),
-                text.rfind("\n", start, end)
+                full_text.rfind(". ", start, end),
+                full_text.rfind("\n", start, end)
             )
             if cut > start + chunk_size // 2:
                 end = cut + 1
-        chunk = text[start:end].strip()
-        if chunk:
-            chunks.append(chunk)
+
+        chunk_text = full_text[start:end].strip()
+
+        if chunk_text:
+            # Trouve quelles pages sont couvertes par ce chunk
+            covered_pages = []
+            for page_num, p_start, p_end in page_boundaries:
+                if p_start < end and p_end > start:
+                    covered_pages.append(page_num)
+
+            chunks.append({
+                "text": chunk_text,
+                "pages": covered_pages
+            })
+
         start = end - overlap
 
-    return chunks
+    return chunks, full_text
 
 
-def score_chunk(chunk: str, question: str) -> float:
+def score_chunk(chunk: dict, question: str) -> float:
     q_words = set(re.findall(r'\b\w{3,}\b', question.lower()))
-    c_words = set(re.findall(r'\b\w{3,}\b', chunk.lower()))
+    c_words = set(re.findall(r'\b\w{3,}\b', chunk["text"].lower()))
     if not q_words:
         return 0.0
     return len(q_words & c_words) / len(q_words)
 
 
-def retrieve_best_chunks(chunks: list, question: str, top_k: int = 4) -> str:
+def retrieve_best_chunks(chunks: list, question: str, top_k: int = 4) -> tuple:
+    """
+    Retourne (contexte_texte, pages_sources).
+    """
     scored = [(score_chunk(c, question), i, c) for i, c in enumerate(chunks)]
     scored.sort(key=lambda x: (-x[0], x[1]))
     best = scored[:top_k]
-    best.sort(key=lambda x: x[1])
-    return "\n\n---\n\n".join(c for _, _, c in best)
+    best.sort(key=lambda x: x[1])  # retri par ordre naturel
+
+    context = "\n\n---\n\n".join(c["text"] for _, _, c in best)
+
+    # Pages sources uniques triées
+    all_pages = []
+    for _, _, c in best:
+        all_pages.extend(c["pages"])
+    source_pages = sorted(set(all_pages))
+
+    return context, source_pages
 
 
 # ============================================================
@@ -99,22 +139,14 @@ def get_client():
 
 
 def ask_mistral(client, context: str, question: str) -> str:
-    """
-    Appel Mistral avec :
-    - temperature=0 (réponses déterministes, sans créativité)
-    - SYSTEM_PROMPT anti-hallucination strict
-    """
     try:
         response = client.chat.complete(
             model="mistral-large-latest",
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {
-                    "role": "user",
-                    "content": f"CONTEXTE:\n{context}\n\nQUESTION: {question}"
-                }
+                {"role": "user", "content": f"CONTEXTE:\n{context}\n\nQUESTION: {question}"}
             ],
-            temperature=0,   # Zéro créativité = zéro hallucination
+            temperature=0,
             max_tokens=1500
         )
         return response.choices[0].message.content
@@ -122,20 +154,38 @@ def ask_mistral(client, context: str, question: str) -> str:
         return f"Erreur Mistral : {e}"
 
 
-def ask_full_or_rag(client, question: str) -> str:
-    """Routage automatique : texte complet si court, RAG si long."""
+def ask_full_or_rag(client, question: str) -> tuple:
+    """
+    Retourne (réponse, pages_sources).
+    - Doc court  → texte complet, pages = toutes les pages
+    - Doc long   → RAG, pages = pages des chunks sélectionnés
+    """
     full_text = st.session_state.get("full_text", "")
     chunks = st.session_state.get("chunks", [])
 
     if not full_text:
-        return "Aucun document chargé."
+        return "Aucun document chargé.", []
 
     if len(full_text) <= 25000:
-        return ask_mistral(client, full_text, question)
+        response = ask_mistral(client, full_text, question)
+        # Pour un doc court on ne peut pas savoir la page exacte sans RAG
+        # On retourne les pages des chunks qui scorent le mieux
+        _, source_pages = retrieve_best_chunks(chunks, question, top_k=3)
+        return response, source_pages
     else:
         top_k = st.session_state.get("top_k", 4)
-        context = retrieve_best_chunks(chunks, question, top_k=top_k)
-        return ask_mistral(client, context, question)
+        context, source_pages = retrieve_best_chunks(chunks, question, top_k=top_k)
+        response = ask_mistral(client, context, question)
+        return response, source_pages
+
+
+def format_sources(pages: list) -> str:
+    """Formate l'affichage des pages sources."""
+    if not pages:
+        return ""
+    if len(pages) == 1:
+        return f"📄 Source : Page {pages[0]}"
+    return f"📄 Sources : Pages {', '.join(str(p) for p in pages)}"
 
 
 # ============================================================
@@ -149,8 +199,7 @@ def extract_pdf_data(pdf_file):
         text = page.extract_text()
         if text and text.strip():
             pages_text[i + 1] = text
-    full_text = "\n".join(pages_text.values())
-    return pages_text, full_text
+    return pages_text
 
 
 def create_pptx(data):
@@ -204,17 +253,17 @@ with st.sidebar:
         file_key = uploaded_file.name
         if st.session_state.get("loaded_file") != file_key:
             with st.spinner("Extraction et découpage du texte..."):
-                pages, full_text = extract_pdf_data(uploaded_file)
-                if not full_text.strip():
+                pages_text = extract_pdf_data(uploaded_file)
+                if not pages_text:
                     st.error("Le PDF semble vide ou non lisible (PDF scanné ?).")
                     st.stop()
-                chunks = split_into_chunks(full_text, chunk_size=2000, overlap=200)
-                st.session_state.pdf_pages = pages
+                chunks, full_text = split_into_chunks(pages_text)
+                st.session_state.pdf_pages = pages_text
                 st.session_state.full_text = full_text
                 st.session_state.chunks = chunks
                 st.session_state.messages = []
                 st.session_state.loaded_file = file_key
-            st.success(f"✅ {len(pages)} pages • {len(chunks)} chunks")
+            st.success(f"✅ {len(pages_text)} pages • {len(chunks)} chunks")
         else:
             st.info(f"📄 {file_key} déjà chargé.")
 
@@ -243,9 +292,13 @@ if "pdf_pages" in st.session_state:
         if "messages" not in st.session_state:
             st.session_state.messages = []
 
+        # Affichage historique
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]):
                 st.write(msg["content"])
+                # Affiche les sources si présentes
+                if msg["role"] == "assistant" and msg.get("pages"):
+                    st.caption(format_sources(msg["pages"]))
 
         if prompt := st.chat_input("Posez une question sur le document..."):
             st.session_state.messages.append({"role": "user", "content": prompt})
@@ -253,9 +306,16 @@ if "pdf_pages" in st.session_state:
                 st.write(prompt)
             with st.chat_message("assistant", avatar="✨"):
                 with st.spinner("Recherche dans le document..."):
-                    response = ask_full_or_rag(client, prompt)
+                    response, source_pages = ask_full_or_rag(client, prompt)
                     st.write(response)
-                    st.session_state.messages.append({"role": "assistant", "content": response})
+                    # Affichage des pages sources
+                    if source_pages:
+                        st.caption(format_sources(source_pages))
+                    st.session_state.messages.append({
+                        "role": "assistant",
+                        "content": response,
+                        "pages": source_pages
+                    })
 
     # TAB 2 : SYNTHÈSE
     with tabs[1]:
@@ -277,12 +337,19 @@ if "pdf_pages" in st.session_state:
                     chunks = st.session_state.chunks
                     step = max(1, len(chunks) // 8)
                     sampled = chunks[::step][:8]
-                    context = "\n\n---\n\n".join(sampled)
+                    context = "\n\n---\n\n".join(c["text"] for c in sampled)
+                    all_pages = []
+                    for c in sampled:
+                        all_pages.extend(c["pages"])
+                    source_pages = sorted(set(all_pages))
                 else:
                     context = full_text
+                    source_pages = sorted(st.session_state.pdf_pages.keys())
+
                 question = f"Fais un résumé structuré {longueur[s_mode]} de ce document, avec des sections claires."
                 result = ask_mistral(client, context, question)
                 st.info(result)
+                st.caption(format_sources(source_pages))
 
     # TAB 3 : ANALYSE
     with tabs[2]:
@@ -307,11 +374,10 @@ if "pdf_pages" in st.session_state:
         with col2:
             if st.button("🔍 Analyse sémantique", key="btn_semantic"):
                 with st.spinner("Analyse en cours..."):
-                    result = ask_full_or_rag(
-                        client,
-                        "Quels sont les thèmes principaux de ce document ? Liste-les et explique chacun brièvement."
-                    )
+                    question = "Quels sont les thèmes principaux de ce document ? Liste-les et explique chacun brièvement."
+                    result, source_pages = ask_full_or_rag(client, question)
                     st.write(result)
+                    st.caption(format_sources(source_pages))
 
     # TAB 4 : AUDIO
     with tabs[3]:
@@ -329,6 +395,7 @@ if "pdf_pages" in st.session_state:
                         tts.write_to_fp(audio_io)
                         audio_io.seek(0)
                         st.audio(audio_io, format="audio/mp3")
+                        st.caption(f"📄 Page {p_num}")
                     except Exception as e:
                         st.error(f"Erreur audio : {e}")
             else:
@@ -346,7 +413,7 @@ if "pdf_pages" in st.session_state:
                         f"Réponds UNIQUEMENT avec un JSON valide, sans texte avant ou après, sans balises markdown : "
                         f'{{ "slides": [ {{ "titre": "Titre de la slide", "points": ["Point 1", "Point 2", "Point 3"] }} ] }}'
                     )
-                    raw = ask_full_or_rag(client, question)
+                    raw, source_pages = ask_full_or_rag(client, question)
                     raw = raw.strip()
                     if raw.startswith("```"):
                         raw = re.sub(r"```(?:json)?", "", raw).strip("` \n")
@@ -364,6 +431,7 @@ if "pdf_pages" in st.session_state:
                             mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
                         )
                         st.success(f"✅ {len(data.get('slides', []))} slides générées !")
+                        st.caption(format_sources(source_pages))
                     else:
                         st.error("Format JSON invalide reçu.")
                         st.code(raw)
