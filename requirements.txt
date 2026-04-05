@@ -1,11 +1,9 @@
-
- 
-# Audio
-gTTS==2.5.1
-streamlit
-mistralai
+streamlit>=1.38.0
+python-dotenv
+mistralai==0.4.2
 PyPDF2
+python-pptx
+gTTS
 llama-index
 llama-index-llms-mistralai
 llama-index-embeddings-mistralai
-
