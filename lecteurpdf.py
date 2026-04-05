@@ -1,5 +1,4 @@
 import streamlit as st
-from mistralai.client import MistralClient
 import PyPDF2
 from io import BytesIO
 import json
@@ -10,10 +9,9 @@ import os
 from gtts import gTTS
 from pptx import Presentation
 from pptx.util import Inches, Pt
-from pptx.enum.text import PP_ALIGN
 from pptx.dml.color import RGBColor
 
-# --- IMPORTS LLAMA-INDEX ---
+# --- IMPORTS LLAMA-INDEX (Indispensables pour le RAG) ---
 from llama_index.core import Document, VectorStoreIndex, Settings
 from llama_index.llms.mistralai import MistralAI
 from llama_index.embeddings.mistralai import MistralAIEmbedding
@@ -36,17 +34,18 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- CONFIGURATION MOTEURS ---
+# --- CONFIGURATION DES MOTEURS ---
 def setup_engines():
+    # Récupération de la clé API depuis les Secrets de Streamlit
     api_key = st.secrets.get("MISTRAL_API_KEY") or os.getenv("MISTRAL_API_KEY")
     if api_key:
-        # Configuration LlamaIndex pour le RAG
+        # LlamaIndex utilise ces réglages pour toutes ses opérations
         Settings.llm = MistralAI(model="mistral-large-latest", api_key=api_key, temperature=0)
         Settings.embed_model = MistralAIEmbedding(model_name="mistral-embed", api_key=api_key)
-        return MistralClient(api_key=api_key)
-    return None
+        return True
+    return False
 
-mistral_client = setup_engines()
+engine_ready = setup_engines()
 
 # --- FONCTIONS UTILITAIRES ---
 def extract_pdf_data(pdf_file):
@@ -55,9 +54,9 @@ def extract_pdf_data(pdf_file):
     full_text = "\n".join(pages_text.values())
     return pages_text, full_text
 
-def create_pptx(data, style_name):
+def create_pptx(data):
     prs = Presentation()
-    bg_color = RGBColor(30, 60, 114) if style_name == "Professionnel" else RGBColor(245, 245, 245)
+    bg_color = RGBColor(30, 60, 114) # Style Professionnel
     for slide_data in data.get("slides", []):
         slide = prs.slides.add_slide(prs.slide_layouts[6])
         slide.background.fill.solid()
@@ -69,6 +68,7 @@ def create_pptx(data, style_name):
             p = content.text_frame.add_paragraph()
             p.text = f"• {pt}"
             p.font.size = Pt(18)
+            p.font.color.rgb = RGBColor(255, 255, 255)
     ppt_io = BytesIO()
     prs.save(ppt_io)
     return ppt_io.getvalue()
@@ -76,6 +76,9 @@ def create_pptx(data, style_name):
 # --- INTERFACE ---
 st.markdown('<h1 class="gemini-gradient">Insight PDF Pro</h1>', unsafe_allow_html=True)
 st.caption(f"Développé par Herman Kandolo • {datetime.now().year}")
+
+if not engine_ready:
+    st.warning("⚠️ En attente de la clé API Mistral...")
 
 with st.sidebar:
     st.subheader("📤 Importation")
@@ -86,7 +89,6 @@ with st.sidebar:
                 pages, full_text = extract_pdf_data(uploaded_file)
                 st.session_state.pdf_pages = pages
                 st.session_state.full_text = full_text
-                # Création de l'index vectoriel
                 doc = Document(text=full_text)
                 st.session_state.index = VectorStoreIndex.from_documents([doc])
             st.success("Analyse terminée !")
@@ -94,30 +96,26 @@ with st.sidebar:
 if 'index' in st.session_state:
     tabs = st.tabs(["💬 Chat", "📝 Synthèse", "📊 Analyse", "🔊 Audio", "🎯 Présentation"])
 
-    # TAB 1 : CHAT (RAG Stricte)
+    # TAB 1 : CHAT
     with tabs[0]:
         if "messages" not in st.session_state: st.session_state.messages = []
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]): st.markdown(msg["content"])
         
-        if prompt := st.chat_input("Une question sur le document ?"):
+        if prompt := st.chat_input("Posez une question..."):
             st.session_state.messages.append({"role": "user", "content": prompt})
             with st.chat_message("user"): st.markdown(prompt)
-            
             with st.chat_message("assistant", avatar="✨"):
-                query_engine = st.session_state.index.as_query_engine(similarity_top_k=3)
-                # On force l'IA à dire "Je ne sais pas" si hors contexte
-                instr = f"Réponds UNIQUEMENT via le doc fourni. Si absent, dis que tu ne sais pas. Question: {prompt}"
-                response = query_engine.query(instr)
+                qe = st.session_state.index.as_query_engine(similarity_top_k=3)
+                response = qe.query(f"Réponds via le doc. Sinon dis que tu ne sais pas. Question: {prompt}")
                 st.markdown(response.response)
                 st.session_state.messages.append({"role": "assistant", "content": response.response})
 
     # TAB 2 : SYNTHÈSE
     with tabs[1]:
-        s_mode = st.select_slider("Précision", options=["Court", "Moyen", "Détaillé"])
-        if st.button("Rédiger le résumé"):
+        if st.button("Générer le résumé"):
             qe = st.session_state.index.as_query_engine()
-            res = qe.query(f"Fais un résumé {s_mode} et structuré de ce document.")
+            res = qe.query("Fais un résumé structuré et détaillé de ce document.")
             st.info(res.response)
 
     # TAB 3 : ANALYSE
@@ -132,39 +130,37 @@ if 'index' in st.session_state:
         with col2:
             if st.button("Analyse sémantique"):
                 qe = st.session_state.index.as_query_engine()
-                st.write(qe.query("Quels sont les thèmes principaux et le ton ?").response)
+                st.write(qe.query("Quels sont les thèmes principaux ?").response)
 
     # TAB 4 : AUDIO
     with tabs[3]:
-        page_num = st.number_input("Page à lire", 1, len(st.session_state.pdf_pages), 1)
+        p_num = st.number_input("Page à lire", 1, len(st.session_state.pdf_pages), 1)
         if st.button("Générer l'audio"):
-            with st.spinner("Génération de la voix..."):
-                tts = gTTS(text=st.session_state.pdf_pages[page_num], lang='fr')
-                audio_io = BytesIO()
-                tts.write_to_fp(audio_io)
-                st.audio(audio_io)
+            tts = gTTS(text=st.session_state.pdf_pages[p_num], lang='fr')
+            audio_io = BytesIO()
+            tts.write_to_fp(audio_io)
+            st.audio(audio_io)
 
-    # TAB 5 : PRÉSENTATION (CORRIGÉ JSON)
+    # TAB 5 : PRÉSENTATION
     with tabs[4]:
         n_slides = st.number_input("Nombre de slides", 3, 10, 5)
         if st.button("Générer PPTX"):
             with st.spinner("L'IA structure vos slides..."):
-                qe = st.session_state.index.as_query_engine()
-                prompt_ppt = (
-                    f"Crée une structure pour {n_slides} slides. "
-                    f"Réponds UNIQUEMENT avec un objet JSON valide : "
-                    f"{{\"slides\": [{{\"titre\": \"...\", \"points\": [\"...\", \"...\"]}}]}}"
-                )
-                raw_response = qe.query(prompt_ppt).response
-                
                 try:
-                    # Extraction sécurisée du JSON
-                    clean_json = re.search(r'\{.*\}', str(raw_response), re.DOTALL).group()
-                    data_ppt = json.loads(clean_json)
-                    ppt_bytes = create_pptx(data_ppt, "Professionnel")
-                    st.download_button("📥 Télécharger la présentation", ppt_bytes, "presentation_ia.pptx")
-                    st.success("Prêt au téléchargement !")
-                except Exception as e:
-                    st.error("Erreur de structure. Réessayez, l'IA a été trop bavarde.")
+                    qe = st.session_state.index.as_query_engine(response_mode="compact")
+                    p_ppt = (
+                        f"Crée une structure pour {n_slides} slides. "
+                        f"Réponds UNIQUEMENT avec un JSON valide : "
+                        f"{{\"slides\": [{{\"titre\": \"...\", \"points\": [\"...\", \"...\"]}}]}}"
+                    )
+                    raw = str(qe.query(p_ppt).response)
+                    start, end = raw.find('{'), raw.rfind('}') + 1
+                    if start != -1 and end > 0:
+                        data = json.loads(raw[start:end])
+                        ppt = create_pptx(data)
+                        st.download_button("📥 Télécharger", ppt, "presentation.pptx")
+                        st.success("Prêt !")
+                    else: st.error("Format JSON non trouvé.")
+                except Exception as e: st.error(f"Erreur : {e}")
 else:
     st.info("Veuillez charger un PDF pour commencer.")
