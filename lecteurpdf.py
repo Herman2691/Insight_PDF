@@ -33,49 +33,45 @@ html, body, [class*="css"] { font-family: 'Google Sans', sans-serif; }
 </style>
 """, unsafe_allow_html=True)
 
+# ============================================================
+# PROMPT ANTI-HALLUCINATION (utilisé partout)
+# ============================================================
+
+SYSTEM_PROMPT = (
+    "Tu es un assistant expert en analyse de documents. "
+    "Réponds UNIQUEMENT en utilisant les informations du CONTEXTE fourni. "
+    "Si la réponse ne se trouve pas dans le contexte, réponds exactement : "
+    "'Je suis désolé, mais cette information n'est pas présente dans le document fourni.' "
+    "Ne réponds jamais en utilisant tes connaissances générales si le sujet est absent du document."
+)
 
 # ============================================================
 # CHUNKING MANUEL
 # ============================================================
 
-def split_into_chunks(text: str, chunk_size: int = 2000, overlap: int = 200) -> list[str]:
-    """
-    Découpe le texte en chunks avec chevauchement pour ne pas perdre
-    le contexte entre deux chunks.
-    - chunk_size : nb de caractères par chunk
-    - overlap    : nb de caractères partagés entre chunks consécutifs
-    """
+def split_into_chunks(text: str, chunk_size: int = 2000, overlap: int = 200) -> list:
     chunks = []
     start = 0
     text_len = len(text)
 
     while start < text_len:
         end = start + chunk_size
-
-        # On coupe proprement à la fin d'une phrase si possible
         if end < text_len:
-            # Cherche le dernier point/retour ligne avant end
             cut = max(
                 text.rfind(". ", start, end),
                 text.rfind("\n", start, end)
             )
             if cut > start + chunk_size // 2:
-                end = cut + 1  # inclut le point
-
+                end = cut + 1
         chunk = text[start:end].strip()
         if chunk:
             chunks.append(chunk)
-
-        start = end - overlap  # recul pour le chevauchement
+        start = end - overlap
 
     return chunks
 
 
 def score_chunk(chunk: str, question: str) -> float:
-    """
-    Score de pertinence simple basé sur le nombre de mots de la question
-    présents dans le chunk (recherche par mots-clés).
-    """
     q_words = set(re.findall(r'\b\w{3,}\b', question.lower()))
     c_words = set(re.findall(r'\b\w{3,}\b', chunk.lower()))
     if not q_words:
@@ -83,15 +79,10 @@ def score_chunk(chunk: str, question: str) -> float:
     return len(q_words & c_words) / len(q_words)
 
 
-def retrieve_best_chunks(chunks: list[str], question: str, top_k: int = 4) -> str:
-    """
-    Sélectionne les top_k chunks les plus pertinents pour la question.
-    Retourne leur contenu concaténé comme contexte pour Mistral.
-    """
+def retrieve_best_chunks(chunks: list, question: str, top_k: int = 4) -> str:
     scored = [(score_chunk(c, question), i, c) for i, c in enumerate(chunks)]
-    scored.sort(key=lambda x: (-x[0], x[1]))  # tri par score desc, puis ordre naturel
+    scored.sort(key=lambda x: (-x[0], x[1]))
     best = scored[:top_k]
-    # Retrie par ordre d'apparition dans le doc pour cohérence
     best.sort(key=lambda x: x[1])
     return "\n\n---\n\n".join(c for _, _, c in best)
 
@@ -107,23 +98,23 @@ def get_client():
     return Mistral(api_key=api_key)
 
 
-def ask_mistral(client, context: str, question: str, system_prompt: str = None) -> str:
-    """Appel direct à Mistral avec contexte et question."""
-    if system_prompt is None:
-        system_prompt = (
-            "Tu es un assistant expert en analyse de documents. "
-            "Réponds uniquement en te basant sur les extraits du document fournis. "
-            "Si la réponse n'est pas dans les extraits, dis-le clairement. "
-            "Réponds toujours en français sauf si demandé autrement."
-        )
+def ask_mistral(client, context: str, question: str) -> str:
+    """
+    Appel Mistral avec :
+    - temperature=0 (réponses déterministes, sans créativité)
+    - SYSTEM_PROMPT anti-hallucination strict
+    """
     try:
         response = client.chat.complete(
             model="mistral-large-latest",
             messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"EXTRAITS DU DOCUMENT:\n{context}\n\nQUESTION: {question}"}
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {
+                    "role": "user",
+                    "content": f"CONTEXTE:\n{context}\n\nQUESTION: {question}"
+                }
             ],
-            temperature=0,
+            temperature=0,   # Zéro créativité = zéro hallucination
             max_tokens=1500
         )
         return response.choices[0].message.content
@@ -131,30 +122,20 @@ def ask_mistral(client, context: str, question: str, system_prompt: str = None) 
         return f"Erreur Mistral : {e}"
 
 
-def ask_with_rag(client, question: str, top_k: int = 4) -> str:
-    """
-    Pipeline RAG manuel :
-    1. Récupère les chunks les plus pertinents
-    2. Les envoie à Mistral comme contexte
-    """
+def ask_full_or_rag(client, question: str) -> str:
+    """Routage automatique : texte complet si court, RAG si long."""
+    full_text = st.session_state.get("full_text", "")
     chunks = st.session_state.get("chunks", [])
-    if not chunks:
+
+    if not full_text:
         return "Aucun document chargé."
 
-    context = retrieve_best_chunks(chunks, question, top_k=top_k)
-    return ask_mistral(client, context, question)
-
-
-def ask_full_or_rag(client, question: str) -> str:
-    """
-    Si le doc est court (<25 000 chars) → envoie tout le texte.
-    Si le doc est long → utilise le RAG par chunks.
-    """
-    full_text = st.session_state.get("full_text", "")
     if len(full_text) <= 25000:
         return ask_mistral(client, full_text, question)
     else:
-        return ask_with_rag(client, question)
+        top_k = st.session_state.get("top_k", 4)
+        context = retrieve_best_chunks(chunks, question, top_k=top_k)
+        return ask_mistral(client, context, question)
 
 
 # ============================================================
@@ -227,16 +208,12 @@ with st.sidebar:
                 if not full_text.strip():
                     st.error("Le PDF semble vide ou non lisible (PDF scanné ?).")
                     st.stop()
-
-                # Découpage en chunks
                 chunks = split_into_chunks(full_text, chunk_size=2000, overlap=200)
-
                 st.session_state.pdf_pages = pages
                 st.session_state.full_text = full_text
                 st.session_state.chunks = chunks
                 st.session_state.messages = []
                 st.session_state.loaded_file = file_key
-
             st.success(f"✅ {len(pages)} pages • {len(chunks)} chunks")
         else:
             st.info(f"📄 {file_key} déjà chargé.")
@@ -246,8 +223,6 @@ with st.sidebar:
         st.metric("Pages", len(st.session_state.pdf_pages))
         st.metric("Chunks RAG", len(st.session_state.get("chunks", [])))
         st.metric("Caractères", f"{len(st.session_state.full_text):,}")
-
-        # Paramètre chunks avancé
         with st.expander("⚙️ Paramètres RAG"):
             st.session_state.top_k = st.slider(
                 "Chunks retenus par requête", 1, 8,
@@ -263,7 +238,7 @@ if "pdf_pages" in st.session_state:
     with tabs[0]:
         is_long = len(st.session_state.full_text) > 25000
         if is_long:
-            st.caption(f"📚 Document long détecté — mode RAG actif ({len(st.session_state.chunks)} chunks)")
+            st.caption(f"📚 Document long — mode RAG actif ({len(st.session_state.chunks)} chunks)")
 
         if "messages" not in st.session_state:
             st.session_state.messages = []
@@ -278,7 +253,6 @@ if "pdf_pages" in st.session_state:
                 st.write(prompt)
             with st.chat_message("assistant", avatar="✨"):
                 with st.spinner("Recherche dans le document..."):
-                    top_k = st.session_state.get("top_k", 4)
                     response = ask_full_or_rag(client, prompt)
                     st.write(response)
                     st.session_state.messages.append({"role": "assistant", "content": response})
@@ -298,17 +272,15 @@ if "pdf_pages" in st.session_state:
 
         if st.button("📝 Rédiger le résumé", key="btn_resume"):
             with st.spinner("Génération du résumé..."):
-                question = f"Fais un résumé structuré {longueur[s_mode]} de ce document, avec des sections claires."
-                # Pour la synthèse on veut couvrir tout le doc → on concatène les chunks espacés
                 full_text = st.session_state.full_text
                 if len(full_text) > 25000:
-                    # Echantillonnage régulier des chunks pour couvrir tout le document
                     chunks = st.session_state.chunks
                     step = max(1, len(chunks) // 8)
                     sampled = chunks[::step][:8]
                     context = "\n\n---\n\n".join(sampled)
                 else:
                     context = full_text
+                question = f"Fais un résumé structuré {longueur[s_mode]} de ce document, avec des sections claires."
                 result = ask_mistral(client, context, question)
                 st.info(result)
 
@@ -320,7 +292,7 @@ if "pdf_pages" in st.session_state:
             "les", "des", "une", "que", "qui", "dans", "pour", "avec", "sur",
             "par", "est", "sont", "this", "that", "from", "have", "been",
             "will", "leur", "leurs", "mais", "donc", "comme", "plus", "aussi",
-            "tout", "tous", "très", "bien", "être", "avoir", "faire", "plus"
+            "tout", "tous", "très", "bien", "être", "avoir", "faire"
         }
         freq = Counter([w for w in words if len(w) > 3 and w not in stop_words])
 
