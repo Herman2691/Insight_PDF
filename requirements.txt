@@ -19,3 +19,7 @@ python-pptx
 
 # Multimédia
 gTTS
+
+llama-index
+llama-index-llms-mistralai
+llama-index-embeddings-mistralai
