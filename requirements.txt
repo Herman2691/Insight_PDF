@@ -2,11 +2,11 @@
 streamlit>=1.38.0
 python-dotenv
 
-# LlamaIndex & Connecteurs Mistral (Le moteur de ton RAG)
+# LlamaIndex & Connecteurs Mistral
 llama-index
 llama-index-llms-mistralai
 llama-index-embeddings-mistralai
-mistralai>=0.4.2
+mistralai>=1.0.0
 
 # Traitement de documents
 PyPDF2
