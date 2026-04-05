@@ -11,6 +11,7 @@ from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
 from mistralai import Mistral
+from fpdf import FPDF
 
 # --- CONFIGURATION ---
 st.set_page_config(page_title="Insight PDF Pro", page_icon="✨", layout="wide")
@@ -29,31 +30,6 @@ html, body, [class*="css"] { font-family: 'Google Sans', sans-serif; }
 [data-testid="stSidebar"] {
     background-color: #f8f9fa;
     border-right: 1px solid #e1e3e1;
-}
-/* Zone de saisie fixée en bas */
-[data-testid="stChatInput"] {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    z-index: 100;
-    background: white;
-    padding: 12px 24px;
-    border-top: 1px solid #e1e3e1;
-    box-shadow: 0 -2px 8px rgba(0,0,0,0.06);
-}
-/* Texte visible dans la zone de saisie */
-[data-testid="stChatInput"] textarea {
-    color: #1a1a1a !important;
-    background-color: #ffffff !important;
-    caret-color: #1a1a1a !important;
-}
-[data-testid="stChatInput"] textarea::placeholder {
-    color: #999999 !important;
-}
-/* Espace en bas pour ne pas cacher le dernier message */
-[data-testid="stChatMessageContainer"] {
-    padding-bottom: 80px;
 }
 /* Bulles messages */
 [data-testid="stChatMessage"] {
@@ -220,6 +196,63 @@ def format_sources(pages: list) -> str:
 
 
 # ============================================================
+# EXPORT PDF CONVERSATION
+# ============================================================
+
+def export_chat_to_pdf(messages: list, doc_name: str) -> bytes:
+    """Génère un PDF de la conversation."""
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_auto_page_break(auto=True, margin=15)
+
+    # Titre
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.set_fill_color(30, 60, 114)
+    pdf.set_text_color(255, 255, 255)
+    pdf.cell(0, 12, "Conversation - Insight PDF Pro", fill=True, ln=True, align="C")
+    pdf.ln(2)
+
+    # Sous-titre
+    pdf.set_font("Helvetica", "", 10)
+    pdf.set_text_color(120, 120, 120)
+    pdf.cell(0, 8, f"Document : {doc_name}", ln=True, align="C")
+    pdf.ln(6)
+
+    for msg in messages:
+        role = msg["role"]
+        content = msg["content"]
+        pages = msg.get("pages", [])
+
+        if role == "user":
+            # Bulle utilisateur
+            pdf.set_fill_color(230, 240, 255)
+            pdf.set_text_color(30, 60, 114)
+            pdf.set_font("Helvetica", "B", 10)
+            pdf.cell(0, 8, "Vous :", ln=True, fill=True)
+            pdf.set_font("Helvetica", "", 10)
+            pdf.set_text_color(30, 30, 30)
+            pdf.multi_cell(0, 7, content)
+        else:
+            # Bulle assistant
+            pdf.set_fill_color(245, 245, 245)
+            pdf.set_text_color(80, 80, 80)
+            pdf.set_font("Helvetica", "B", 10)
+            pdf.cell(0, 8, "Assistant :", ln=True, fill=True)
+            pdf.set_font("Helvetica", "", 10)
+            pdf.set_text_color(30, 30, 30)
+            pdf.multi_cell(0, 7, content)
+            if pages:
+                pdf.set_font("Helvetica", "I", 9)
+                pdf.set_text_color(100, 100, 200)
+                src = f"Sources : Pages {', '.join(str(p) for p in pages)}" if len(pages) > 1 else f"Source : Page {pages[0]}"
+                pdf.cell(0, 6, src, ln=True)
+
+        pdf.ln(4)
+
+    return bytes(pdf.output())
+
+
+# ============================================================
 # FONCTIONS UTILITAIRES
 # ============================================================
 
@@ -317,8 +350,25 @@ if "pdf_pages" in st.session_state:
     # TAB 1 : CHAT
     with tabs[0]:
         is_long = len(st.session_state.full_text) > 25000
-        if is_long:
-            st.caption(f"📚 Document long — mode RAG actif ({len(st.session_state.chunks)} chunks)")
+
+        # Barre supérieure : info RAG + bouton export
+        col_info, col_export = st.columns([4, 1])
+        with col_info:
+            if is_long:
+                st.caption(f"📚 Document long — mode RAG actif ({len(st.session_state.chunks)} chunks)")
+        with col_export:
+            if st.session_state.get("messages"):
+                pdf_bytes = export_chat_to_pdf(
+                    st.session_state.messages,
+                    st.session_state.get("loaded_file", "document")
+                )
+                st.download_button(
+                    label="⬇️ PDF",
+                    data=pdf_bytes,
+                    file_name="conversation.pdf",
+                    mime="application/pdf",
+                    key="dl_chat_pdf"
+                )
 
         if "messages" not in st.session_state:
             st.session_state.messages = []
@@ -327,7 +377,6 @@ if "pdf_pages" in st.session_state:
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]):
                 st.write(msg["content"])
-                # Affiche les sources si présentes
                 if msg["role"] == "assistant" and msg.get("pages"):
                     st.caption(format_sources(msg["pages"]))
 
@@ -339,7 +388,6 @@ if "pdf_pages" in st.session_state:
                 with st.spinner("Recherche dans le document..."):
                     response, source_pages = ask_full_or_rag(client, prompt)
                     st.write(response)
-                    # Affichage des pages sources
                     if source_pages:
                         st.caption(format_sources(source_pages))
                     st.session_state.messages.append({
