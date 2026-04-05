@@ -1,9 +1,13 @@
-streamlit>=1.38.0
-python-dotenv
-mistralai==0.4.2
-PyPDF2
-python-pptx
-gTTS
-llama-index
-llama-index-llms-mistralai
-llama-index-embeddings-mistralai
+# Core Framework
+streamlit==1.38.0
+python-dotenv==1.0.1
+
+# Mistral direct (sans llama-index)
+mistralai==1.2.5
+
+# Traitement de documents
+PyPDF2==3.0.1
+python-pptx==1.0.2
+
+# Audio
+gTTS==2.5.1
