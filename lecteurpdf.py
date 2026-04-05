@@ -200,7 +200,16 @@ def format_sources(pages: list) -> str:
 # ============================================================
 
 def export_chat_to_pdf(messages: list, doc_name: str) -> bytes:
-    """Génère un PDF de la conversation."""
+    """Génère un PDF de la conversation — compatible Latin-1 + nettoyage Unicode."""
+
+    def clean(text: str) -> str:
+        """
+        Convertit le texte en Latin-1 safe :
+        - Remplace les emojis et caractères non supportés par '?'
+        - Garde les accents français (é, è, à, ç, etc.)
+        """
+        return text.encode("latin-1", errors="replace").decode("latin-1")
+
     pdf = FPDF()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
@@ -209,43 +218,41 @@ def export_chat_to_pdf(messages: list, doc_name: str) -> bytes:
     pdf.set_font("Helvetica", "B", 16)
     pdf.set_fill_color(30, 60, 114)
     pdf.set_text_color(255, 255, 255)
-    pdf.cell(0, 12, "Conversation - Insight PDF Pro", fill=True, ln=True, align="C")
+    pdf.cell(0, 12, clean("Conversation - Insight PDF Pro"), fill=True, ln=True, align="C")
     pdf.ln(2)
 
     # Sous-titre
     pdf.set_font("Helvetica", "", 10)
     pdf.set_text_color(120, 120, 120)
-    pdf.cell(0, 8, f"Document : {doc_name}", ln=True, align="C")
+    pdf.cell(0, 8, clean(f"Document : {doc_name}"), ln=True, align="C")
     pdf.ln(6)
 
     for msg in messages:
         role = msg["role"]
-        content = msg["content"]
+        text = clean(msg["content"])
         pages = msg.get("pages", [])
 
         if role == "user":
-            # Bulle utilisateur
             pdf.set_fill_color(230, 240, 255)
             pdf.set_text_color(30, 60, 114)
             pdf.set_font("Helvetica", "B", 10)
             pdf.cell(0, 8, "Vous :", ln=True, fill=True)
             pdf.set_font("Helvetica", "", 10)
             pdf.set_text_color(30, 30, 30)
-            pdf.multi_cell(0, 7, content)
+            pdf.multi_cell(0, 7, text)
         else:
-            # Bulle assistant
             pdf.set_fill_color(245, 245, 245)
             pdf.set_text_color(80, 80, 80)
             pdf.set_font("Helvetica", "B", 10)
             pdf.cell(0, 8, "Assistant :", ln=True, fill=True)
             pdf.set_font("Helvetica", "", 10)
             pdf.set_text_color(30, 30, 30)
-            pdf.multi_cell(0, 7, content)
+            pdf.multi_cell(0, 7, text)
             if pages:
                 pdf.set_font("Helvetica", "I", 9)
                 pdf.set_text_color(100, 100, 200)
                 src = f"Sources : Pages {', '.join(str(p) for p in pages)}" if len(pages) > 1 else f"Source : Page {pages[0]}"
-                pdf.cell(0, 6, src, ln=True)
+                pdf.cell(0, 6, clean(src), ln=True)
 
         pdf.ln(4)
 
