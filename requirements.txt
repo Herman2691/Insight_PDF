@@ -1,13 +1,14 @@
 # Core Framework
 streamlit==1.38.0
 python-dotenv==1.0.1
-
-# Mistral direct (sans llama-index)
+ 
+# Mistral direct
 mistralai==1.2.5
-
+ 
 # Traitement de documents
 PyPDF2==3.0.1
 python-pptx==1.0.2
-
+fpdf2==2.7.9
+ 
 # Audio
 gTTS==2.5.1
