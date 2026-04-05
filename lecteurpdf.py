@@ -40,6 +40,7 @@ st.markdown("""
 def setup_engines():
     api_key = st.secrets.get("MISTRAL_API_KEY") or os.getenv("MISTRAL_API_KEY")
     if api_key:
+        # Configuration LlamaIndex pour le RAG
         Settings.llm = MistralAI(model="mistral-large-latest", api_key=api_key, temperature=0)
         Settings.embed_model = MistralAIEmbedding(model_name="mistral-embed", api_key=api_key)
         return MistralClient(api_key=api_key)
@@ -81,20 +82,19 @@ with st.sidebar:
     uploaded_file = st.file_uploader("Choisir un PDF", type="pdf", label_visibility="collapsed")
     if uploaded_file:
         if 'index' not in st.session_state:
-            with st.spinner("Indexation intelligente..."):
+            with st.spinner("Indexation intelligente (RAG)..."):
                 pages, full_text = extract_pdf_data(uploaded_file)
                 st.session_state.pdf_pages = pages
                 st.session_state.full_text = full_text
-                # Création de l'index LlamaIndex
+                # Création de l'index vectoriel
                 doc = Document(text=full_text)
                 st.session_state.index = VectorStoreIndex.from_documents([doc])
             st.success("Analyse terminée !")
 
 if 'index' in st.session_state:
-    # ON REINSTALLE TOUS TES ONGLETS ICI
     tabs = st.tabs(["💬 Chat", "📝 Synthèse", "📊 Analyse", "🔊 Audio", "🎯 Présentation"])
 
-    # TAB 1 : CHAT (Via LlamaIndex)
+    # TAB 1 : CHAT (RAG Stricte)
     with tabs[0]:
         if "messages" not in st.session_state: st.session_state.messages = []
         for msg in st.session_state.messages:
@@ -106,11 +106,13 @@ if 'index' in st.session_state:
             
             with st.chat_message("assistant", avatar="✨"):
                 query_engine = st.session_state.index.as_query_engine(similarity_top_k=3)
-                response = query_engine.query(f"Réponds strictement via le doc. Sinon dis que tu ne sais pas. Question: {prompt}")
+                # On force l'IA à dire "Je ne sais pas" si hors contexte
+                instr = f"Réponds UNIQUEMENT via le doc fourni. Si absent, dis que tu ne sais pas. Question: {prompt}"
+                response = query_engine.query(instr)
                 st.markdown(response.response)
                 st.session_state.messages.append({"role": "assistant", "content": response.response})
 
-    # TAB 2 : SYNTHÈSE (Via LlamaIndex)
+    # TAB 2 : SYNTHÈSE
     with tabs[1]:
         s_mode = st.select_slider("Précision", options=["Court", "Moyen", "Détaillé"])
         if st.button("Rédiger le résumé"):
@@ -118,7 +120,7 @@ if 'index' in st.session_state:
             res = qe.query(f"Fais un résumé {s_mode} et structuré de ce document.")
             st.info(res.response)
 
-    # TAB 3 : ANALYSE (Statique + IA)
+    # TAB 3 : ANALYSE
     with tabs[2]:
         col1, col2 = st.columns(2)
         words = re.findall(r'\b\w+\b', st.session_state.full_text.lower())
@@ -136,24 +138,33 @@ if 'index' in st.session_state:
     with tabs[3]:
         page_num = st.number_input("Page à lire", 1, len(st.session_state.pdf_pages), 1)
         if st.button("Générer l'audio"):
-            tts = gTTS(text=st.session_state.pdf_pages[page_num], lang='fr')
-            audio_io = BytesIO()
-            tts.write_to_fp(audio_io)
-            st.audio(audio_io)
+            with st.spinner("Génération de la voix..."):
+                tts = gTTS(text=st.session_state.pdf_pages[page_num], lang='fr')
+                audio_io = BytesIO()
+                tts.write_to_fp(audio_io)
+                st.audio(audio_io)
 
-    # TAB 5 : PRÉSENTATION
+    # TAB 5 : PRÉSENTATION (CORRIGÉ JSON)
     with tabs[4]:
         n_slides = st.number_input("Nombre de slides", 3, 10, 5)
         if st.button("Générer PPTX"):
-            with st.spinner("Structure en cours..."):
+            with st.spinner("L'IA structure vos slides..."):
                 qe = st.session_state.index.as_query_engine()
-                prompt_ppt = f"Crée un JSON pour {n_slides} slides: {{'slides': [{{'titre': '...', 'points': ['...']}}]}}"
-                raw = qe.query(prompt_ppt).response
+                prompt_ppt = (
+                    f"Crée une structure pour {n_slides} slides. "
+                    f"Réponds UNIQUEMENT avec un objet JSON valide : "
+                    f"{{\"slides\": [{{\"titre\": \"...\", \"points\": [\"...\", \"...\"]}}]}}"
+                )
+                raw_response = qe.query(prompt_ppt).response
+                
                 try:
-                    json_str = re.search(r'\{.*\}', raw, re.DOTALL).group()
-                    data_ppt = json.loads(json_str)
+                    # Extraction sécurisée du JSON
+                    clean_json = re.search(r'\{.*\}', str(raw_response), re.DOTALL).group()
+                    data_ppt = json.loads(clean_json)
                     ppt_bytes = create_pptx(data_ppt, "Professionnel")
-                    st.download_button("📥 Télécharger", ppt_bytes, "presentation.pptx")
-                except: st.error("Erreur de structure JSON. Réessayez.")
+                    st.download_button("📥 Télécharger la présentation", ppt_bytes, "presentation_ia.pptx")
+                    st.success("Prêt au téléchargement !")
+                except Exception as e:
+                    st.error("Erreur de structure. Réessayez, l'IA a été trop bavarde.")
 else:
-    st.info("Veuillez charger un fichier PDF.")
+    st.info("Veuillez charger un PDF pour commencer.")
