@@ -501,11 +501,19 @@ def format_sources(pages: list) -> str:
 def evaluate_with_ragas(question: str, answer: str, contexts: list) -> dict:
     """
     Évaluation avec la vraie lib RAGAS (ragas.evaluate).
-    Retourne None si ragas n'est pas installé.
+
+    Métriques utilisées (sans ground truth / reference) :
+      - faithfulness      : la réponse est-elle fidèle au contexte ?
+      - answer_relevancy  : la réponse répond-elle bien à la question ?
+
+    ⚠️ context_recall est EXCLU car il exige une colonne 'reference'
+       (réponse de référence annotée manuellement) absente ici.
+
+    Retourne None si ragas n'est pas installé → fallback LLM-as-judge.
     """
     try:
         from ragas import evaluate
-        from ragas.metrics import faithfulness, answer_relevancy, context_recall
+        from ragas.metrics import faithfulness, answer_relevancy
         from datasets import Dataset
 
         dataset = Dataset.from_dict({
@@ -516,20 +524,21 @@ def evaluate_with_ragas(question: str, answer: str, contexts: list) -> dict:
 
         result = evaluate(
             dataset=dataset,
-            metrics=[faithfulness, answer_relevancy, context_recall],
+            metrics=[faithfulness, answer_relevancy],
         )
 
+        # context_recall approché via LLM-as-judge côté evaluate_rag_answer
         return {
             "faithfulness": float(result["faithfulness"]),
             "answer_relevance": float(result["answer_relevancy"]),
-            "context_recall": float(result["context_recall"]),
+            "context_recall": None,   # calculé séparément en LLM-as-judge
             "faithfulness_reason": "Calculé via ragas.evaluate()",
             "answer_relevance_reason": "Calculé via ragas.evaluate()",
-            "context_recall_reason": "Calculé via ragas.evaluate()",
+            "context_recall_reason": "Approché via LLM-as-judge (context_recall nécessite une référence annotée)",
             "source": "ragas"
         }
     except ImportError:
-        return None  # Fallback LLM-as-judge
+        return None  # Fallback LLM-as-judge complet
     except Exception as e:
         return {"error": str(e)}
 
@@ -540,40 +549,60 @@ def evaluate_rag_answer(client, question: str, context: str, answer: str, chunks
     1. Essaie d'abord la vraie lib RAGAS
     2. Fallback sur LLM-as-judge (approximation)
     """
-    # Tentative vraie RAGAS
+    # Tentative vraie RAGAS (faithfulness + answer_relevancy seulement)
+    ragas_result = None
     if chunks_selected:
         contexts_list = [c["text"] for c in chunks_selected]
         ragas_result = evaluate_with_ragas(question, answer, contexts_list)
-        if ragas_result is not None:
-            return ragas_result
+        if ragas_result is not None and "error" in ragas_result:
+            ragas_result = None
 
-    # Fallback LLM-as-judge
-    eval_prompt = f"""Tu es un évaluateur RAG expert. Évalue les 3 métriques suivantes
-en retournant UNIQUEMENT un JSON valide, sans markdown :
+    if ragas_result is not None:
+        # Mode hybride : RAGAS pour faithfulness/relevancy + LLM pour context_recall
+        cr_prompt = (
+            "Tu es un évaluateur RAG expert. Évalue UNIQUEMENT context_recall.\n"
+            "Retourne UNIQUEMENT un JSON valide sans markdown.\n\n"
+            f"QUESTION: {question}\n"
+            f"CONTEXTE UTILISÉ: {context[:2000]}\n"
+            f"RÉPONSE GÉNÉRÉE: {answer}\n\n"
+            'Format : {"context_recall": <float 0.0-1.0>, "context_recall_reason": "<explication courte>"}\n\n'
+            "context_recall : le contexte contient-il les infos nécessaires ? (1.0 = parfait)"
+        )
+        try:
+            raw = client.chat.complete(
+                model="mistral-large-latest",
+                messages=[{"role": "user", "content": cr_prompt}],
+                temperature=0,
+                max_tokens=200
+            ).choices[0].message.content.strip()
+            raw = re.sub(r"```(?:json)?", "", raw).strip("` \n")
+            s, e = raw.find("{"), raw.rfind("}") + 1
+            cr_data = json.loads(raw[s:e])
+            ragas_result["context_recall"] = cr_data.get("context_recall", 0.0)
+            ragas_result["context_recall_reason"] = cr_data.get(
+                "context_recall_reason", "Approché via LLM-as-judge"
+            )
+        except Exception:
+            ragas_result["context_recall"] = 0.0
+            ragas_result["context_recall_reason"] = "Calcul échoué"
+        return ragas_result
 
-QUESTION: {question}
-
-CONTEXTE UTILISÉ:
-{context[:3000]}
-
-RÉPONSE GÉNÉRÉE:
-{answer}
-
-Réponds avec ce format exact :
-{{
-  "faithfulness": <float 0.0-1.0>,
-  "answer_relevance": <float 0.0-1.0>,
-  "context_recall": <float 0.0-1.0>,
-  "faithfulness_reason": "<explication courte>",
-  "answer_relevance_reason": "<explication courte>",
-  "context_recall_reason": "<explication courte>"
-}}
-
-Définitions :
-- faithfulness : la réponse ne contient que des infos du contexte (1.0 = totalement fidèle)
-- answer_relevance : la réponse répond précisément à la question (1.0 = parfait)
-- context_recall : le contexte contient les infos pour répondre (1.0 = contexte complet)"""
-
+    # Full fallback LLM-as-judge (3 métriques)
+    eval_prompt = (
+        "Tu es un évaluateur RAG expert. Évalue les 3 métriques suivantes\n"
+        "en retournant UNIQUEMENT un JSON valide, sans markdown :\n\n"
+        f"QUESTION: {question}\n\n"
+        f"CONTEXTE UTILISÉ:\n{context[:3000]}\n\n"
+        f"RÉPONSE GÉNÉRÉE:\n{answer}\n\n"
+        "Réponds avec ce format exact :\n"
+        '{"faithfulness": <float 0.0-1.0>, "answer_relevance": <float 0.0-1.0>, '
+        '"context_recall": <float 0.0-1.0>, "faithfulness_reason": "<explication courte>", '
+        '"answer_relevance_reason": "<explication courte>", "context_recall_reason": "<explication courte>"}\n\n'
+        "Définitions :\n"
+        "- faithfulness : la réponse ne contient que des infos du contexte (1.0 = totalement fidèle)\n"
+        "- answer_relevance : la réponse répond précisément à la question (1.0 = parfait)\n"
+        "- context_recall : le contexte contient les infos pour répondre (1.0 = contexte complet)"
+    )
     try:
         raw = client.chat.complete(
             model="mistral-large-latest",
@@ -581,7 +610,6 @@ Définitions :
             temperature=0,
             max_tokens=500
         ).choices[0].message.content.strip()
-
         raw = re.sub(r"```(?:json)?", "", raw).strip("` \n")
         start, end = raw.find("{"), raw.rfind("}") + 1
         result = json.loads(raw[start:end])
