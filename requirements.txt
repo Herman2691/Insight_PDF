@@ -16,3 +16,4 @@ pdfplumber
 faiss-cpu
 ragas
 datasets
+sentence-transformers
