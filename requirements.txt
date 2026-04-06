@@ -12,3 +12,7 @@ fpdf2==2.7.9
  
 # Audio
 gTTS==2.5.1
+pdfplumber
+faiss-cpu
+ragas
+datasets
